@@ -1,0 +1,61 @@
+# Self-Healing RAG API — hardened Docker image (Phase 6)
+# Uses multi-stage build for smaller attack surface.
+
+# ============================================================
+# Stage 1: Build wheels
+# ============================================================
+FROM python:3.10-slim AS builder
+
+WORKDIR /wheels
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip wheel --no-cache-dir --wheel-dir /wheels .
+
+
+# ============================================================
+# Stage 2: Runtime
+# ============================================================
+FROM python:3.10-slim AS runtime
+
+# Create non-root user
+RUN groupadd -r raguser && useradd -r -g raguser -m -d /app raguser
+
+WORKDIR /app
+
+# Install system dependencies (minimal set)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy wheels from builder and install
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links /wheels self_healing_rag \
+    && rm -rf /wheels
+
+# Copy application code
+COPY --chown=raguser:raguser backend/ ./backend/
+COPY --chown=raguser:raguser alembic.ini .
+COPY --chown=raguser:raguser scripts/ ./scripts/
+
+# Create required directories with correct permissions
+RUN mkdir -p /app/audit_logs /app/eval_results /app/temp_uploads \
+    && chown -R raguser:raguser /app
+
+# Set environment variables
+ENV PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Switch to non-root user
+USER raguser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the application
+CMD ["uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,89 @@
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+downloads/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.so
+
+# ── Virtual Environment ─────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+
+# ── Environment & Secrets ──────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.key
+*.pem
+*.cert
+
+# ── Local Data & Logs ──────────────────────────────────────
+chroma_data/
+audit_logs/
+temp_uploads/
+eval_results/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.log
+*.log.*
+
+# ── Frontend (Next.js / React) ──────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.eslintcache
+frontend/tsconfig.tsbuildinfo
+frontend/next-env.d.ts
+frontend/package-lock.json
+
+# ── IDE & OS ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+
+# ── Development Scratch ─────────────────────────────────────
+scratch/
+tmp/
+
+# ── Graphify Artifacts (regenerate on demand) ───────────────
+graphify-out/cache/
+graphify-out/graph.html
+graphify-out/graph.json
+graphify-out/manifest.json
+graphify-out/cost.json
+graphify-out/.graphify_uncached.txt
+
+# ── TypeScript ──────────────────────────────────────────────
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Infrastructure Terraform / Helm (if added later) ───────
+*.tfstate
+*.tfstate.*
+helm/charts/
+
+# ── Docker ──────────────────────────────────────────────────
+.docker/

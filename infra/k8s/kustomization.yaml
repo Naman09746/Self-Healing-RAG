@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: self-healing-rag
+
+namePrefix: ""
+
+commonLabels:
+  app.kubernetes.io/name: self-healing-rag
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/environment: production
+
+commonAnnotations:
+  app.kubernetes.io/version: "0.1.0"
+  support.contact: "devops@example.com"
+  support.sla: "business-hours"
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - services/ollama.yaml
+  - services/chroma.yaml
+  - services/redis.yaml
+  - services/postgres.yaml
+  - services/neo4j.yaml
+
+images:
+  - name: self-healing-rag-api
+    newName: ghcr.io/your-org/self-healing-rag-api
+    newTag: latest
+
+configMapGenerator:
+  - name: self-healing-rag-config
+    behavior: merge
+    literals:
+      - OTEL_CONSOLE_EXPORT=false
+
+secretGenerator:
+  - name: self-healing-rag-secrets
+    behavior: merge
+    type: Opaque
+
+patches:
+  # Production overrides: 5 replicas in prod
+  - target:
+      kind: Deployment
+      name: self-healing-rag-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 5
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "4000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "8Gi"

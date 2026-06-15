@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: self-healing-rag-config
+  namespace: self-healing-rag
+  labels:
+    app.kubernetes.io/name: self-healing-rag
+    app.kubernetes.io/component: api
+data:
+  # Application
+  PROJECT_NAME: "Self-Healing RAG Pipeline"
+  API_V1_STR: "/api/v1"
+  # Logging
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  # Model
+  MODEL_NAME: "mistral:7b"
+  EMBEDDING_MODEL: "nomic-embed-text"
+  # Vector Store
+  CHROMA_PORT: "8000"
+  CHROMA_COLLECTION_NAME: "rag_collection"
+  CHROMA_ALLOW_RESET: "false"
+  # Redis
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  # Database
+  POSTGRES_SERVER: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "self_healing_rag"
+  # Observability
+  OTEL_CONSOLE_EXPORT: "false"
+  OTEL_SERVICE_NAME: "self-healing-rag"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+  LANGSMITH_PROJECT: "self-healing-rag"
+  # Rate Limiting
+  RATE_LIMIT_REQUESTS: "60"
+  RATE_LIMIT_WINDOW_SECONDS: "60"
+  MAX_CONCURRENT_QUERIES: "5"
+  QUERY_TIMEOUT_SECONDS: "120"
+  # Grounding
+  GROUNDING_THRESHOLD: "0.7"

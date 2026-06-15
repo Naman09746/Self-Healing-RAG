@@ -1,0 +1,62 @@
+# Dependencies
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+*.egg
+
+# Environment
+.env
+.env.*
+*.local
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+tests/
+
+# Build artifacts
+build/
+dist/
+*.whl
+
+# Docs
+*.md
+docs/
+
+# Frontend (separate docker build)
+frontend/
+frontend-old/
+
+# Data directories (mounted as volumes)
+chroma_data/
+temp_uploads/
+eval_results/
+audit_logs/
+
+# Development scripts
+scripts/
+scratch/
+test_data/
+
+# Logs
+*.log

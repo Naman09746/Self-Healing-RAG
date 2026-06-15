@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: self-healing-rag-postgres
+  namespace: self-healing-rag
+  labels:
+    app.kubernetes.io/name: self-healing-rag
+    app.kubernetes.io/component: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: self-healing-rag-db-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: self-healing-rag-db-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: self-healing-rag-db-secrets
+                  key: POSTGRES_DB
+          args:
+            - "-c"
+            - "max_connections=100"
+            - "-c"
+            - "shared_buffers=1GB"
+            - "-c"
+            - "effective_cache_size=3GB"
+            - "-c"
+            - "work_mem=64MB"
+            - "-c"
+            - "maintenance_work_mem=256MB"
+            - "-c"
+            - "random_page_cost=1.1"
+            - "-c"
+            - "effective_io_concurrency=200"
+            - "-c"
+            - "wal_level=replica"
+            - "-c"
+            - "max_wal_senders=3"
+            - "-c"
+            - "wal_keep_size=512"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-init
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - raguser
+                - -d
+                - self_healing_rag
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - raguser
+                - -d
+                - self_healing_rag
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 10
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data-pvc
+        - name: postgres-init
+          configMap:
+            name: postgres-init-sql
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data-pvc
+  namespace: self-healing-rag
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-sql
+  namespace: self-healing-rag
+data:
+  01-init.sql: |
+    -- Extension for UUID generation
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    -- Connection pool sizing
+    ALTER SYSTEM SET pool_size = 20;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: self-healing-rag
+spec:
+  ports:
+    - port: 5432
+      targetPort: postgres
+  selector:
+    app.kubernetes.io/component: postgres

@@ -1,0 +1,29 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: self-healing-rag-api-pdb
+  namespace: self-healing-rag
+  labels:
+    app.kubernetes.io/name: self-healing-rag
+    app.kubernetes.io/component: api
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: self-healing-rag
+      app.kubernetes.io/component: api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: self-healing-rag-ollama-pdb
+  namespace: self-healing-rag
+  labels:
+    app.kubernetes.io/name: self-healing-rag
+    app.kubernetes.io/component: ollama
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: self-healing-rag
+      app.kubernetes.io/component: ollama

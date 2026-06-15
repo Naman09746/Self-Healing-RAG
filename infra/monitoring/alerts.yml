@@ -1,0 +1,141 @@
+# Alerting Rules — Self-Healing RAG
+groups:
+  - name: self-healing-rag
+    interval: 30s
+    rules:
+      # ── Availability ──────────────────────────────────────
+      - alert: APIInstanceDown
+        expr: up{job="self-healing-rag-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: ai-platform
+        annotations:
+          summary: "API instance {{ $labels.pod }} is down"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has been unreachable for >1m."
+
+      - alert: InsufficientAPICapacity
+        expr: count(up{job="self-healing-rag-api"} == 1) < 2
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: "Insufficient API replicas"
+          description: "Only {{ $value }} API replicas are healthy. Minimum 2 required."
+
+      # ── Latency ───────────────────────────────────────────
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 3
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: "High P95 latency ({{ $value }}s)"
+          description: "P95 request latency is {{ $value }}s, exceeding 3s threshold."
+
+      - alert: HighLatencyP99
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 10
+        for: 2m
+        labels:
+          severity: critical
+          team: ai-platform
+        annotations:
+          summary: "Critical P99 latency ({{ $value }}s)"
+          description: "P99 request latency is {{ $value }}s, exceeding 10s threshold."
+
+      # ── Error Rate ────────────────────────────────────────
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+          team: ai-platform
+        annotations:
+          summary: "High error rate ({{ $value | humanizePercentage }})"
+          description: "Error rate is {{ $value | humanizePercentage }} of all requests, exceeding 5%."
+
+      - alert: High4xxRate
+        expr: rate(http_requests_total{status=~"4.."}[5m]) / rate(http_requests_total[5m]) > 0.20
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: "High 4xx rate ({{ $value | humanizePercentage }})"
+          description: "4xx rate is {{ $value | humanizePercentage }} of all requests."
+
+      # ── Hallucination / Quality ───────────────────────────
+      - alert: HighHallucinationRate
+        expr: rate(rag_hallucinations_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: "Hallucination events detected"
+          description: "{{ $value }} hallucination events in the last 5 minutes."
+
+      - alert: LowGroundingScore
+        expr: avg_over_time(rag_grounding_score[10m]) < 0.7
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: "Low average grounding score"
+          description: "Average grounding score is {{ $value }}, below 0.7 threshold."
+
+      # ── Infrastructure ────────────────────────────────────
+      - alert: LLMHighMemoryUsage
+        expr: (container_memory_working_set_bytes{container="ollama"} / container_spec_memory_limit_bytes{container="ollama"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: "Ollama memory usage > 85%"
+          description: "Ollama container memory usage is {{ $value | humanizePercentage }}."
+
+      - alert: ChromaDiskSpaceLow
+        expr: (chroma_data_size_bytes / 20e9) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: "ChromaDB disk space low"
+          description: "ChromaDB persistent volume is >85% full."
+
+      # ── Rate Limiting ─────────────────────────────────────
+      - alert: RateLimitHigh
+        expr: rate(http_requests_total{status="429"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: "High rate limiting rate"
+          description: "{{ $value }} requests/s being rate limited."
+
+      - alert: QueryTimeoutRate
+        expr: rate(rag_query_timeouts_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: "Query timeouts occurring"
+          description: "{{ $value }} query timeouts in last 5 minutes."
+
+      # ── Cache ─────────────────────────────────────────────
+      - alert: LowCacheHitRate
+        expr: rate(rag_cache_hits_total[5m]) / (rate(rag_cache_hits_total[5m]) + rate(rag_cache_misses_total[5m])) < 0.1
+        for: 30m
+        labels:
+          severity: info
+          team: ai-platform
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}, below 10% target."

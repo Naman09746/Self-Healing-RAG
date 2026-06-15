@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self-Healing RAG | Neural Workflow Visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050505;
+            --accent: #FFB000;
+            --accent-secondary: #00F0FF;
+            --text: #E0E0E0;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            position: fixed;
+            top: 40px;
+            text-align: center;
+        }
+
+        h1 {
+            font-family: 'Syne', sans-serif;
+            font-size: 2rem;
+            color: var(--accent);
+            letter-spacing: 0.2em;
+            margin: 0;
+            text-transform: uppercase;
+        }
+
+        .subtitle {
+            font-size: 0.8rem;
+            opacity: 0.6;
+            margin-top: 10px;
+            letter-spacing: 0.1em;
+        }
+
+        .graph-container {
+            width: 90vw;
+            height: 70vh;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 40px 100px rgba(0,0,0,0.5);
+            padding: 40px;
+        }
+
+        .mermaid {
+            background: transparent !important;
+        }
+
+        /* Custom Mermaid Styling via CSS variables */
+        :root {
+            --mermaid-node-bg: rgba(255, 176, 0, 0.1);
+            --mermaid-node-border: #FFB000;
+            --mermaid-label-color: #F2F2F2;
+            --mermaid-edge-color: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Neural Workflow</h1>
+        <div class="subtitle">AUTONOMOUS SELF-HEALING ARCHITECTURE // V.1.0</div>
+    </div>
+
+    <div class="graph-container">
+        <div class="mermaid">
+            graph TD
+                %% Node Definitions
+                START((START))
+                INTAKE[Intake Agent]
+                RETRIEVAL[Retrieval Agent]
+                GEN[Generation Agent]
+                CRITIC{Critic Agent}
+                HEAL[Healing Agent]
+                EVAL[Evaluation Node]
+                OUTPUT((OUTPUT))
+
+                %% Styling
+                classDef default fill:rgba(15,15,15,0.8),stroke:#333,stroke-width:1px,color:#eee;
+                classDef agent fill:rgba(255,176,0,0.1),stroke:#FFB000,stroke-width:2px,color:#FFB000;
+                classDef critic fill:rgba(0,240,255,0.1),stroke:#00F0FF,stroke-width:2px,color:#00F0FF;
+                classDef terminal fill:#000,stroke:#666,stroke-width:1px,color:#888;
+
+                class INTAKE,RETRIEVAL,GEN,HEAL,EVAL agent;
+                class CRITIC critic;
+                class START,OUTPUT terminal;
+
+                %% Workflow
+                START --> INTAKE
+                INTAKE --> RETRIEVAL
+                RETRIEVAL --> GEN
+                GEN --> CRITIC
+                
+                %% Healing Loop
+                CRITIC -- "Low Grounding / Hallucination" --> HEAL
+                HEAL -- "Rewritten Query" --> RETRIEVAL
+                
+                %% Success Path
+                CRITIC -- "Confident Answer" --> EVAL
+                EVAL --> OUTPUT
+
+                %% Annotations
+                subgraph "Self-Healing Cycle"
+                    RETRIEVAL
+                    GEN
+                    CRITIC
+                    HEAL
+                end
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            theme: 'dark',
+            startOnLoad: true,
+            securityLevel: 'loose',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+</body>
+</html>
