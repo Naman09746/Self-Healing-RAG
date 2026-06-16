@@ -35,6 +35,8 @@ chroma_data/
 audit_logs/
 temp_uploads/
 eval_results/
+test_data/
+docs/archive/
 *.db
 *.db-journal
 *.sqlite
@@ -51,7 +53,9 @@ frontend/build/
 frontend/.eslintcache
 frontend/tsconfig.tsbuildinfo
 frontend/next-env.d.ts
-frontend/package-lock.json
+
+# ── K8s Secrets (template only — actual secrets via vault) ─
+infra/k8s/secrets.yaml
 
 # ── IDE & OS ──────────────────────────────────────────────
 .DS_Store
