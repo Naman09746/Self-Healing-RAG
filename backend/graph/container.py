@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from backend.storage.reranker import Reranker
     from backend.agents.planner.agent import PlannerAgent
     from backend.agents.memory.agent import MemoryAgent
-    from backend.agents.summarizer.agent import SummarizerAgent
     from backend.agents.generation.agent import GenerationAgent
     from backend.agents.critic.agent import CriticAgent
     from backend.agents.healer.query_rewriter import QueryRewriter
@@ -42,7 +41,6 @@ class ServiceContainer:
         self.reranker: Optional["Reranker"] = None
         self.planner: Optional["PlannerAgent"] = None
         self.memory_agent: Optional["MemoryAgent"] = None
-        self.summarizer: Optional["SummarizerAgent"] = None
         self.generator: Optional["GenerationAgent"] = None
         self.critic: Optional["CriticAgent"] = None
         self.rewriter: Optional["QueryRewriter"] = None
@@ -61,7 +59,6 @@ class ServiceContainer:
         from backend.storage.reranker import reranker
         from backend.agents.planner.agent import PlannerAgent
         from backend.agents.memory.agent import MemoryAgent
-        from backend.agents.summarizer.agent import SummarizerAgent
         from backend.agents.generation.agent import GenerationAgent
         from backend.agents.critic.agent import CriticAgent
         from backend.agents.healer.query_rewriter import QueryRewriter
@@ -75,7 +72,6 @@ class ServiceContainer:
         self.reranker = reranker
         self.planner = PlannerAgent()
         self.memory_agent = MemoryAgent()
-        self.summarizer = SummarizerAgent()
         self.generator = GenerationAgent()
         self.critic = CriticAgent()
         self.rewriter = QueryRewriter()

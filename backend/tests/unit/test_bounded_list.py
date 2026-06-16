@@ -8,7 +8,7 @@ import operator
 
 import pytest
 
-from backend.graph.bounded_list import BoundedList
+from backend.graph.state import BoundedList
 
 
 # ── construction ─────────────────────────────────────────────────────────────

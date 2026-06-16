@@ -9,12 +9,103 @@ from pydantic import (
     model_serializer,
 )
 import operator
+import copy
+from collections import UserList
+from typing import (
+    Generic,
+    Iterator,
+    overload,
+    TypeVar,
+    Union,
+)
 
-from backend.graph.bounded_list import BoundedList
+_T = TypeVar("_T")
 
-# Default capacities for bounded lists (Phase 4D)
-RETRIEVED_CHUNKS_MAXLEN = 20   # At most 20 chunks across retries
-ERROR_LOG_MAXLEN = 50           # Keep last 50 error entries
+
+class BoundedList(UserList[_T], Generic[_T]):
+    """A list that never exceeds *maxlen* items.
+
+    When append/extend would exceed *maxlen* the oldest items are dropped.
+    Supports ``operator.add`` for LangGraph state reducers.
+    """
+
+    def __init__(
+        self,
+        maxlen: int,
+        initlist: Optional[Union[List[_T], "BoundedList[_T]"]] = None,
+    ):
+        if maxlen < 1:
+            raise ValueError("maxlen must be >= 1")
+        self.maxlen: int = maxlen
+        super().__init__(initlist or [])
+        self._truncate()
+
+    def _truncate(self) -> None:
+        if len(self.data) > self.maxlen:
+            self.data[: len(self.data) - self.maxlen] = []
+
+    def append(self, item: _T) -> None:
+        if len(self.data) >= self.maxlen:
+            self.data.pop(0)
+        self.data.append(item)
+
+    def extend(self, other: Union[List[_T], "BoundedList[_T]"]) -> None:
+        items: List[_T] = list(other)
+        overflow = len(self.data) + len(items) - self.maxlen
+        if overflow > 0:
+            del self.data[:overflow]
+        self.data.extend(items)
+        self._truncate()
+
+    def __iadd__(self, other: Union[List[_T], "BoundedList[_T]"]) -> "BoundedList[_T]":
+        self.extend(other)
+        return self
+
+    def __add__(self, other: Union[List[_T], "BoundedList[_T]"]) -> "BoundedList[_T]":
+        new = self.copy()
+        new.extend(other)
+        return new
+
+    def __radd__(self, other: Union[List[_T], "BoundedList[_T]"]) -> "BoundedList[_T]":
+        if isinstance(other, list):
+            merged = BoundedList[_T](maxlen=self.maxlen, initlist=other)
+            merged.extend(self)
+            return merged
+        return self.__add__(other)
+
+    def copy(self) -> "BoundedList[_T]":
+        return BoundedList[_T](maxlen=self.maxlen, initlist=list(self.data))
+
+    def __copy__(self) -> "BoundedList[_T]":
+        return self.copy()
+
+    def __deepcopy__(self, memo: dict) -> "BoundedList[_T]":
+        return BoundedList[_T](maxlen=self.maxlen, initlist=copy.deepcopy(self.data, memo))
+
+    def to_list(self) -> List[_T]:
+        return list(self.data)
+
+    @classmethod
+    def from_list(cls, items: List[_T], maxlen: int) -> "BoundedList[_T]":
+        return cls(maxlen=maxlen, initlist=items)
+
+    def __getstate__(self) -> dict:
+        return {"maxlen": self.maxlen, "data": self.data}
+
+    def __setstate__(self, state: dict) -> None:
+        self.maxlen = state["maxlen"]
+        self.data = state["data"]
+
+    def __repr__(self) -> str:
+        return f"BoundedList(maxlen={self.maxlen}, items={list(self.data)})"
+
+    def __str__(self) -> str:
+        return repr(self)
+
+
+# Default capacities for bounded lists
+RETRIEVED_CHUNKS_MAXLEN = 20
+ERROR_LOG_MAXLEN = 50
 
 
 @dataclass
