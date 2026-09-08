@@ -19,8 +19,8 @@ from backend.agents.critic.verdict import Verdict, ClaimVerdict
 
 logger = get_logger(__name__)
 
-# Maximum concurrent LLM calls — protects Ollama from queue overload
-_PARALLELISM = 5
+# Maximum concurrent LLM calls — protects Ollama from queue overload and memory spikes
+_PARALLELISM = 2
 _semaphore = asyncio.Semaphore(_PARALLELISM)
 
 # ── prompt template (one per claim) ─────────────────────────────────────
@@ -40,6 +40,26 @@ CLAIM:
 
 Respond with a JSON object:
 {{"verdict": "<VERDICT>", "reasoning": "<brief explanation>"}}
+"""
+
+_VERIFY_CLAIMS_BATCH_PROMPT = """You are a fact-checker. Determine the relationship of each claim below to the source context.
+
+VERDICT OPTIONS (choose exactly one per claim):
+  SUPPORTED           — The context directly and clearly supports the claim.
+  PARTIALLY_SUPPORTED — The context supports part of the claim, but some elements are missing or nuanced.
+  UNSUPPORTED         — The context neither supports nor contradicts the claim (neutral).
+  CONTRADICTED        — The context directly contradicts the claim.
+
+SOURCE CONTEXT:
+{context}
+
+CLAIMS TO VERIFY:
+{claims_formatted}
+
+Respond ONLY with a JSON array of objects with "claim", "verdict", and "reasoning":
+[
+  {{"claim": "<exact claim text>", "verdict": "SUPPORTED|PARTIALLY_SUPPORTED|UNSUPPORTED|CONTRADICTED", "reasoning": "<brief explanation>"}}
+]
 """
 
 
@@ -87,6 +107,22 @@ class GroundingVerifier:
             context = "\n\n".join(context_chunks[:3])  # top 3 chunks
             span.set_attribute("context_length", len(context))
 
+            # Optimization: for multiple claims, attempt single-call batch verification first
+            if len(claims) > 1:
+                try:
+                    batch_results = await self._verify_claims_batch_fast(claims, context)
+                    if batch_results and len(batch_results) == len(claims):
+                        span.set_attribute("verification_strategy", "batch_fast")
+                        span.set_attribute("verdicts_count", len(batch_results))
+                        span.set_attribute("error_count", 0)
+                        span.set_status(trace.Status(trace.StatusCode.OK))
+                        logger.info("Batch verification completed in single LLM call", claims_count=len(claims))
+                        return batch_results
+                except Exception as b_err:
+                    logger.warning("Batch verification fallback to parallel per-claim", error=str(b_err))
+
+            # Fallback: parallel per-claim execution
+            span.set_attribute("verification_strategy", "per_claim_parallel")
             tasks = [
                 self._verify_single_claim(claim, context)
                 for claim in claims
@@ -116,6 +152,45 @@ class GroundingVerifier:
             span.set_status(trace.Status(trace.StatusCode.OK))
 
         return verdicts
+
+    async def _verify_claims_batch_fast(
+        self,
+        claims: List[str],
+        context: str,
+    ) -> Optional[List[ClaimVerdict]]:
+        """Fast-path: verify all claims in a single structured LLM call."""
+        tracer = get_tracer()
+        with tracer.start_as_current_span("verify_claims_batch_fast") as span:
+            span.set_attribute("claims_count", len(claims))
+            claims_formatted = "\n".join(f"{i+1}. {c}" for i, c in enumerate(claims))
+            prompt = _VERIFY_CLAIMS_BATCH_PROMPT.format(context=context, claims_formatted=claims_formatted)
+
+            response = await self.client.generate(prompt, format="json")
+            start = response.find("[")
+            end = response.rfind("]") + 1
+            if start < 0 or end <= start:
+                return None
+
+            raw_data = json.loads(response[start:end])
+            if not isinstance(raw_data, list) or len(raw_data) != len(claims):
+                return None
+
+            verdicts: List[ClaimVerdict] = []
+            for i, claim in enumerate(claims):
+                item = raw_data[i]
+                verdict_str = str(item.get("verdict", "UNSUPPORTED")).upper()
+                if verdict_str not in {v.value for v in Verdict}:
+                    verdict_str = "UNSUPPORTED"
+                verdicts.append(
+                    ClaimVerdict(
+                        claim=claim,
+                        verdict=Verdict(verdict_str),
+                        reasoning=str(item.get("reasoning", "")),
+                    )
+                )
+
+            span.set_status(trace.Status(trace.StatusCode.OK))
+            return verdicts
 
     async def _verify_single_claim(
         self,

@@ -239,15 +239,15 @@ function Navbar() {
   return (
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? "glass-strong" : "bg-transparent"
+        scrolled ? "bg-white/80 backdrop-blur-md shadow-xs" : "bg-transparent"
       }`}
-      style={{ borderBottom: scrolled ? "1px solid rgba(255,255,255,0.04)" : "1px solid transparent" }}
+      style={{ borderBottom: scrolled ? "1px solid var(--border-default)" : "1px solid transparent" }}
     >
       <div className="section-container flex items-center justify-between h-16">
         <a href="/" className="flex items-center gap-2.5 group">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:shadow-lg group-hover:scale-105"
-            style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
+            style={{ background: "linear-gradient(135deg, #2563eb, #4f46e5)" }}
           >
             <Brain size={16} className="text-white" />
           </div>
@@ -256,7 +256,7 @@ function Navbar() {
           </span>
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
             style={{ background: "var(--bg-hover)", color: "var(--text-muted)", border: "1px solid var(--border-default)" }}>
-            v2.0
+            v2.4 Production
           </span>
         </a>
 
@@ -400,25 +400,24 @@ function StatsCard({ icon, label, end, suffix = "" }: { icon: React.ReactNode; l
 function TestimonialCard({ quote, author, role, avatar, rating }: { quote: string; author: string; role: string; avatar: string; rating: number }) {
   return (
     <div
-      className="rounded-xl p-6 transition-all duration-300 hover:shadow-lg hover:border-indigo-500/20"
-      style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}
+      className="rounded-xl p-6 transition-all duration-300 hover:shadow-md bg-white border border-slate-200/80"
     >
       <div className="flex gap-1 mb-4">
         {Array.from({ length: rating }).map((_, i) => (
           <Star key={i} size={12} style={{ color: "#f59e0b", fill: "#f59e0b" }} />
         ))}
       </div>
-      <Quote size={16} className="mb-2" style={{ color: "var(--text-muted)", opacity: 0.5 }} />
-      <p className="text-xs leading-relaxed mb-4" style={{ color: "var(--text-secondary)" }}>
+      <Quote size={16} className="mb-2 text-slate-400" />
+      <p className="text-xs leading-relaxed mb-4 text-slate-600">
         &ldquo;{quote}&rdquo;
       </p>
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white bg-gradient-to-br from-blue-600 to-indigo-600">
           {avatar}
         </div>
         <div>
-          <div className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>{author}</div>
-          <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>{role}</div>
+          <div className="text-xs font-semibold text-slate-900">{author}</div>
+          <div className="text-[10px] text-slate-500">{role}</div>
         </div>
       </div>
     </div>
@@ -429,47 +428,39 @@ function TestimonialCard({ quote, author, role, avatar, rating }: { quote: strin
 function PricingCard({ name, desc, price, features, cta, popular = false }: { name: string; desc: string; price: string; features: string[]; cta: string; popular?: boolean }) {
   return (
     <div
-      className={`rounded-xl p-6 transition-all duration-300 relative ${popular ? 'animate-border-glow' : ''}`}
-      style={{
-        background: popular
-          ? "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.04))"
-          : "rgba(255,255,255,0.02)",
-        border: popular
-          ? "1px solid rgba(99,102,241,0.25)"
-          : "1px solid rgba(255,255,255,0.05)",
-      }}
+      className={`rounded-xl p-6 transition-all duration-300 relative bg-white ${
+        popular
+          ? "border-2 border-blue-600 shadow-md ring-1 ring-blue-500/20"
+          : "border border-slate-200/80 shadow-xs"
+      }`}
     >
       {popular && (
         <div
-          className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[9px] font-semibold"
-          style={{
-            background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-            color: "#fff",
-          }}
+          className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-[10px] font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-xs"
         >
           Most Popular
         </div>
       )}
-      <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>{name}</h3>
-      <p className="text-[10px] mb-4" style={{ color: "var(--text-muted)" }}>{desc}</p>
+      <h3 className="text-sm font-bold mb-1 text-slate-900">{name}</h3>
+      <p className="text-xs mb-4 text-slate-500">{desc}</p>
       <div className="mb-4">
-        <span className="text-3xl font-bold font-mono text-gradient">{price}</span>
-        {price !== "Custom" && <span className="text-[10px] ml-1" style={{ color: "var(--text-muted)" }}>/month</span>}
+        <span className="text-3xl font-bold font-mono text-slate-900">{price}</span>
+        {price !== "Custom" && <span className="text-xs ml-1 text-slate-500">/month</span>}
       </div>
       <ul className="space-y-2 mb-6">
         {features.map((f, i) => (
-          <li key={i} className="flex items-center gap-2 text-[11px]" style={{ color: "var(--text-secondary)" }}>
-            <CheckCircle size={10} style={{ color: "#22c55e" }} />
+          <li key={i} className="flex items-center gap-2 text-xs text-slate-600">
+            <CheckCircle size={12} className="text-emerald-600 shrink-0" />
             {f}
           </li>
         ))}
       </ul>
       <a
         href="/dashboard"
-        className={`block text-center py-2.5 rounded-lg text-xs font-medium transition-all ${
+        className={`block text-center py-2.5 rounded-lg text-xs font-semibold transition-all ${
           popular
-            ? "btn-primary"
-            : "btn-outline"
+            ? "bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+            : "bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200"
         }`}
       >
         {cta}
@@ -550,63 +541,63 @@ function LogoMarquee() {
 /* ─── Footer ─────────────────────────────────────────── */
 function Footer() {
   return (
-    <footer style={{ borderTop: "1px solid rgba(255,255,255,0.04)", background: "#08080c" }}>
+    <footer className="border-t border-slate-200/90 bg-white">
       <div className="section-container py-16">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-600 shadow-2xs">
                 <Brain size={14} className="text-white" />
               </div>
-              <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Nexus Core</span>
+              <span className="text-sm font-bold text-slate-900">Nexus Core</span>
             </div>
-            <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              Self-healing multi-agent RAG platform for enterprise knowledge retrieval with automatic hallucination detection and correction.
+            <p className="text-xs leading-relaxed text-slate-500">
+              Self-healing multi-agent RAG platform with Autonomous Experiment Scientist (AES) for automated, production-grade optimization.
             </p>
           </div>
           <div>
-            <h4 className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>Product</h4>
-            <div className="space-y-2">
-              <a href="#features" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Features</a>
-              <a href="#pricing" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Pricing</a>
-              <a href="/docs" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Documentation</a>
-              <a href="/dashboard" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Dashboard</a>
+            <h4 className="text-[11px] font-bold uppercase tracking-wider mb-3 text-slate-900">Product</h4>
+            <div className="space-y-2 text-xs">
+              <a href="#features" className="block text-slate-600 hover:text-blue-600 transition-colors">Features</a>
+              <a href="#pricing" className="block text-slate-600 hover:text-blue-600 transition-colors">Pricing</a>
+              <a href="/docs" className="block text-slate-600 hover:text-blue-600 transition-colors">Documentation</a>
+              <a href="/dashboard" className="block text-slate-600 hover:text-blue-600 transition-colors">Dashboard</a>
             </div>
           </div>
           <div>
-            <h4 className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>Company</h4>
-            <div className="space-y-2">
-              <a href="#" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>About</a>
-              <a href="#" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Blog</a>
-              <a href="#" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Careers</a>
-              <a href="#" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Contact</a>
+            <h4 className="text-[11px] font-bold uppercase tracking-wider mb-3 text-slate-900">Company</h4>
+            <div className="space-y-2 text-xs">
+              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">About</a>
+              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Blog</a>
+              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Careers</a>
+              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Contact</a>
             </div>
           </div>
           <div>
-            <h4 className="text-[10px] font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>Legal</h4>
-            <div className="space-y-2">
-              <a href="#" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Privacy</a>
-              <a href="#" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Terms</a>
-              <a href="#" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>Security</a>
-              <a href="#" className="block text-[11px] hover:text-indigo-400 transition-colors" style={{ color: "var(--text-secondary)" }}>SOC 2</a>
+            <h4 className="text-[11px] font-bold uppercase tracking-wider mb-3 text-slate-900">Legal</h4>
+            <div className="space-y-2 text-xs">
+              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Privacy</a>
+              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Terms</a>
+              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Security</a>
+              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">SOC 2</a>
             </div>
           </div>
         </div>
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-8" style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
-          <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-            &copy; {new Date().getFullYear()} Nexus Core. All rights reserved.
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-8 border-t border-slate-100">
+          <p className="text-xs text-slate-500">
+            &copy; {new Date().getFullYear()} Nexus Core | Self-Healing RAG. All rights reserved.
           </p>
-          <div className="flex items-center gap-3">
-            <a href="#" className="p-1.5 rounded-lg hover:bg-white/5 transition-colors" style={{ color: "var(--text-muted)" }}>
+          <div className="flex items-center gap-3 text-slate-400">
+            <a href="#" className="p-1.5 rounded-lg hover:text-slate-700 hover:bg-slate-100 transition-colors">
               <GitBranch size={14} />
             </a>
-            <a href="#" className="p-1.5 rounded-lg hover:bg-white/5 transition-colors" style={{ color: "var(--text-muted)" }}>
+            <a href="#" className="p-1.5 rounded-lg hover:text-slate-700 hover:bg-slate-100 transition-colors">
               <MessageSquare size={14} />
             </a>
-            <a href="#" className="p-1.5 rounded-lg hover:bg-white/5 transition-colors" style={{ color: "var(--text-muted)" }}>
+            <a href="#" className="p-1.5 rounded-lg hover:text-slate-700 hover:bg-slate-100 transition-colors">
               <Globe size={14} />
             </a>
-            <a href="#" className="p-1.5 rounded-lg hover:bg-white/5 transition-colors" style={{ color: "var(--text-muted)" }}>
+            <a href="#" className="p-1.5 rounded-lg hover:text-slate-700 hover:bg-slate-100 transition-colors">
               <Mail size={14} />
             </a>
           </div>

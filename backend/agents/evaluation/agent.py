@@ -292,3 +292,7 @@ def run_offline_evaluation(
 
     evaluator = RAGASEvaluator(llm_config=llm_config)
     return evaluator.evaluate_samples(samples)
+
+
+# Alias for backwards compatibility with service container
+EvaluationAgent = RAGASEvaluator

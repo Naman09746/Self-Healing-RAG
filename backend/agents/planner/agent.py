@@ -11,7 +11,7 @@ class PlannerAgent:
         self.model = model or settings.SMALL_MODEL_NAME
         self.client = LLMClient(model=self.model)
 
-    def create_plan(self, query: str) -> Dict[str, Any]:
+    async def create_plan(self, query: str) -> Dict[str, Any]:
         """Analyze the query and create an execution plan."""
         prompt = f"""
         You are an expert AI Query Planner. Analyze the user's query and decide the best retrieval strategy.
@@ -28,12 +28,14 @@ class PlannerAgent:
         }}
         """
         
-        response = self.client.generate(prompt)
         try:
+            response = await self.client.generate(prompt, format="json")
             # Simple JSON extraction
             start = response.find("{")
             end = response.rfind("}") + 1
-            return json.loads(response[start:end])
+            if start >= 0 and end > start:
+                return json.loads(response[start:end])
+            return json.loads(response)
         except Exception as e:
             logger.error(f"Failed to parse planner response: {str(e)}")
             return {

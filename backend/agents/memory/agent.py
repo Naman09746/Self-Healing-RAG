@@ -24,5 +24,11 @@ class MemoryAgent:
 
     def retrieve_past_insights(self, query: str, k: int = 3) -> List[str]:
         """Retrieve similar past solutions for a new query."""
-        results = self.memory_store.query(query, n_results=k)
-        return results.get("documents", [[]])[0]
+        try:
+            if hasattr(self.memory_store, "collection") and self.memory_store.collection.count() == 0:
+                return []
+            results = self.memory_store.query(query, n_results=k)
+            return results.get("documents", [[]])[0]
+        except Exception as e:
+            logger.debug("Past insights retrieval skipped or empty", error=str(e))
+            return []

@@ -15,6 +15,8 @@ async def run_rag_pipeline(
     session_id: Optional[str] = None,
     tenant_id: Optional[str] = None,
     user_uuid: Optional[str] = None,
+    skip_cache: bool = False,
+    skip_websocket: bool = False,
 ) -> Dict[str, Any]:
     """Execute the full RAG pipeline via LangGraph with real-time streaming.
 
@@ -27,6 +29,8 @@ async def run_rag_pipeline(
         tenant_id: Tenant scope for storage-layer isolation. Falls back
                    to the configured default tenant.
         user_uuid: Immutable user UUID for audit logging and session isolation.
+        skip_cache: If True, bypass semantic cache lookup (used during experiments).
+        skip_websocket: If True, bypass WebSocket event emissions (used during experiments).
 
     Returns:
         Dict with query, answer, session_id, chunks_retrieved, status,
@@ -48,27 +52,28 @@ async def run_rag_pipeline(
         pipeline_span.set_attribute("tenant_id", tenant_id or "")
         pipeline_span.set_attribute("user_uuid", user_uuid or "")
 
-        # Check Semantic Cache — tenant-scoped
-        cached = deps.query_cache.get_cached_query(query, tenant_id=tenant_id)
-        if cached:
-            pipeline_span.set_attribute("cached", True)
-            pipeline_span.set_status(trace.Status(trace.StatusCode.OK))
-            logger.info("Serving from semantic cache", query=query)
-            # Notify WebSocket clients about cache hit
-            try:
-                from backend.api.routers.websocket import manager
-                await manager.send_event(
-                    session_id, {"type": "status", "phase": "completed", "source": "cache"}
-                )
-            except Exception:
-                pass  # No WebSocket connection is fine
-            return {
-                "query": query,
-                "answer": cached["answer"],
-                "session_id": session_id,
-                "chunks_retrieved": 0,
-                "status": "cached",
-            }
+        # Check Semantic Cache — tenant-scoped (unless skip_cache is True)
+        if not skip_cache and deps.query_cache:
+            cached = deps.query_cache.get_cached_query(query, tenant_id=tenant_id)
+            if cached:
+                pipeline_span.set_attribute("cached", True)
+                pipeline_span.set_status(trace.Status(trace.StatusCode.OK))
+                logger.info("Serving from semantic cache", query=query)
+                if not skip_websocket:
+                    try:
+                        from backend.api.routers.websocket import manager
+                        await manager.send_event(
+                            session_id, {"type": "status", "phase": "completed", "source": "cache"}
+                        )
+                    except Exception:
+                        pass
+                return {
+                    "query": query,
+                    "answer": cached["answer"],
+                    "session_id": session_id,
+                    "chunks_retrieved": 0,
+                    "status": "cached",
+                }
 
         pipeline_span.set_attribute("cached", False)
 
@@ -91,22 +96,24 @@ async def run_rag_pipeline(
 
         final_state = initial_state
         try:
-            # Stream events through WebSockets
-            from backend.api.routers.websocket import manager
-
             async for event in graph.astream(initial_state, stream_mode="values"):
                 final_state = event
                 phase = event.get("current_phase", "unknown")
 
-                await manager.send_event(
-                    session_id,
-                    {
-                        "type": "phase_update",
-                        "phase": phase,
-                        "retry_count": event.get("retry_count", 0),
-                        "grounding_score": event.get("grounding_score", 0.0),
-                    },
-                )
+                if not skip_websocket:
+                    try:
+                        from backend.api.routers.websocket import manager
+                        await manager.send_event(
+                            session_id,
+                            {
+                                "type": "phase_update",
+                                "phase": phase,
+                                "retry_count": event.get("retry_count", 0),
+                                "grounding_score": event.get("grounding_score", 0.0),
+                            },
+                        )
+                    except Exception:
+                        pass
 
             pipeline_span.set_attribute("status", final_state.get("current_phase", "unknown"))
             pipeline_span.set_attribute("grounding_score", final_state.get("grounding_score", 0.0))
@@ -127,9 +134,10 @@ async def run_rag_pipeline(
             pipeline_span.record_exception(e)
             pipeline_span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
             logger.error("Pipeline execution failed", error=str(e))
-            try:
-                from backend.api.routers.websocket import manager
-                await manager.send_event(session_id, {"type": "error", "message": str(e)})
-            except Exception:
-                pass
+            if not skip_websocket:
+                try:
+                    from backend.api.routers.websocket import manager
+                    await manager.send_event(session_id, {"type": "error", "message": str(e)})
+                except Exception:
+                    pass
             raise

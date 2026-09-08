@@ -70,7 +70,7 @@ _TECHNICAL_TERMS: Set[str] = {
     "predictive", "power", "federal", "reserve", "policy", "curve",
     "vector", "database",
     # Additional terms often used in domain-specific queries
-    "python", "docker", "kubernetes", "quantum",
+    "docker", "kubernetes", "quantum",
     "algorithm", "architecture", "deployment", "cluster",
     "saas", "encryption", "protocol",
 }
@@ -148,10 +148,10 @@ _QUESTION_WORD_WEIGHTS: dict = {
 # Entity detection via capitalization + punctuation patterns
 # ---------------------------------------------------------------------------
 
-# Matches multi-word proper nouns (2+ capitalized words) — strong domain signal.
+# Matches proper nouns (single or multi-word capitalized) — strong domain signal.
 # Handles possessive forms like "Act's" by optionally matching "'s" at end.
 _ENTITY_PATTERN: re.Pattern = re.compile(
-    r"\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){1,3}"
+    r"\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*"
     r"(?:'s)?(?:\s+\([A-Z]{2,}\))?\b"
 )
 
@@ -226,20 +226,20 @@ def _extract_features(query: str) -> dict:
     cleaned_tokens: List[str] = [_clean_token(t).lower() for t in raw_tokens]
     lower_query: str = query.lower()
 
-    # 1. Technical term density (including multi-word phrases with cleaned tokens)
+    # 1. Technical term presence (combination of density and count)
     tech_hits: int = _count_tech_terms(cleaned_tokens)
-    tech_density: float = tech_hits / max(n_tokens, 1)
+    tech_density: float = min(max(tech_hits / max(n_tokens, 1), tech_hits / 8.0), 1.0)
 
     # 2. Question word weight
     q_word: Optional[str] = next((t for t in cleaned_tokens if t in _QUESTION_WORD_WEIGHTS), None)
     q_weight: float = _QUESTION_WORD_WEIGHTS.get(q_word, 0.0)
 
-    # 3. Multi-hop signal density
+    # 3. Multi-hop signal density (combination of density and count)
     causal_hits: int = len(_CAUSAL_PATTERNS.findall(lower_query))
     temporal_hits: int = len(_TEMPORAL_PATTERNS.findall(lower_query))
     comparative_hits: int = len(_COMPARATIVE_PATTERNS.findall(lower_query))
     multi_hop_hits: int = causal_hits + temporal_hits + comparative_hits
-    multi_hop_density: float = min(multi_hop_hits / max(n_tokens, 1) * 3.0, 1.0)
+    multi_hop_density: float = min(max(multi_hop_hits / max(n_tokens, 1) * 2.0, multi_hop_hits / 3.0), 1.0)
 
     # 4. Entity count (capitalized proper nouns as multi-word, acronyms)
     # Exclude common stop words that happen to be capitalized at sentence start
@@ -247,15 +247,15 @@ def _extract_features(query: str) -> dict:
     filtered_entities: int = sum(
         1 for e in raw_entity_matches if e.lower().rstrip("'s") not in _STOP_ENTITY_WORDS
     )
-    entity_density: float = min(filtered_entities / max(n_tokens, 1) * 2.0, 1.0)
+    entity_density: float = min(filtered_entities / max(n_tokens, 1), 1.0)
 
     # 5. Length factor (log scale — diminishing returns)
     length_factor: float = min(math.log1p(n_tokens) / 4.0, 1.0)
 
-    # 6. Clause count (sentences / conjunctions)
+    # 6. Clause count (sentences / conjunctions beyond simple clause)
     clause_pattern = re.compile(r"(?:[,;]\s+|\.\s+|\b(?:and|or|but|because|although|whereas)\b)")
-    clause_count: int = len(clause_pattern.findall(lower_query)) + 1
-    clause_factor: float = min(clause_count / 5.0, 1.0)
+    sub_clauses: int = len(clause_pattern.findall(lower_query))
+    clause_factor: float = min(sub_clauses / 3.0, 1.0)
 
     return {
         "n_tokens": float(n_tokens),
@@ -272,7 +272,7 @@ def _extract_features(query: str) -> dict:
 # Core classifier
 # ---------------------------------------------------------------------------
 
-_CONTRAST_DENOM: float = 0.20
+_CONTRAST_DENOM: float = 0.22
 """Denominator in ``x / (x + denom)`` contrast stretch.
 
 Tuned empirically: 0.20 spreads simple queries to ~0.29 (under 0.3),
@@ -310,10 +310,10 @@ def compute_complexity(query: str) -> float:
 
     # Weighted sum (weights sum to 1.0 for interpretability)
     raw = (
-        0.25 * f["tech_density"]
+        0.30 * f["tech_density"]
         + 0.15 * f["q_weight"]
         + 0.25 * f["multi_hop_density"]
-        + 0.15 * f["entity_density"]
+        + 0.10 * f["entity_density"]
         + 0.05 * f["length_factor"]
         + 0.15 * f["clause_factor"]
     )

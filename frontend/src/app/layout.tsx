@@ -49,7 +49,7 @@ export const metadata: Metadata = {
   },
 };
 
-/** Inline script to set data-theme before React hydrates — prevents flash */
+/** Inline script to set data-theme before React hydrates — prevents flash, defaults to light */
 const themeScript = `
 (function() {
   try {
@@ -57,10 +57,11 @@ const themeScript = `
     if (t === 'light' || t === 'dark') {
       document.documentElement.setAttribute('data-theme', t);
     } else {
-      var m = window.matchMedia('(prefers-color-scheme: light)');
-      document.documentElement.setAttribute('data-theme', m.matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', 'light');
     }
-  } catch(e) {}
+  } catch(e) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
 })();
 `;
 

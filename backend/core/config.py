@@ -35,8 +35,8 @@ class Settings(BaseSettings):
 
     # Ollama Settings
     OLLAMA_HOST: str = Field(default="http://localhost:11434")
-    MODEL_NAME: str = Field(default="mistral:7b")
-    SMALL_MODEL_NAME: str = Field(default="lily-1.5b:latest")
+    MODEL_NAME: str = Field(default="llama3.2:1b")
+    SMALL_MODEL_NAME: str = Field(default="llama3.2:1b")
     EMBEDDING_MODEL: str = Field(default="nomic-embed-text")
 
     # Vector Store Settings
@@ -188,5 +188,9 @@ class Settings(BaseSettings):
         default="self-healing-rag",
         description="LangSmith project name for run grouping."
     )
+
+    def with_overrides(self, **kwargs) -> "Settings":
+        """Return a copy of Settings with specified fields overridden without mutating global settings."""
+        return self.model_copy(update=kwargs)
 
 settings = Settings()

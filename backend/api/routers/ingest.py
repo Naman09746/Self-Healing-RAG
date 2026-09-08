@@ -11,15 +11,21 @@ router = APIRouter(prefix="/ingest", tags=["ingestion"])
 logger = get_logger(__name__)
 pipeline = IngestionPipeline()
 
+from backend.storage.db.session import get_db
+from backend.storage.db.models import Document as DBDocument
+from sqlalchemy.ext.asyncio import AsyncSession
+
 TEMP_DIR = Path("temp_uploads")
 TEMP_DIR.mkdir(exist_ok=True)
 
+@router.post("")
 @router.post("/file")
 async def ingest_file(
     file: UploadFile = File(...),
-    current_user: Annotated[DBUser, Depends(get_current_user)] = None
+    current_user: Annotated[DBUser, Depends(get_current_user)] = None,
+    db: AsyncSession = Depends(get_db),
 ):
-    """Upload and ingest a file.
+    """Upload and ingest a file into hybrid, sparse, and graph storage.
 
     Tenant identity is derived from the authenticated user's JWT, **not**
     from the request body. This prevents cross-tenant data injection.
@@ -36,6 +42,20 @@ async def ingest_file(
 
         tenant_id = current_user.tenant_id or current_user.user_uuid
         result = await pipeline.ingest_file(str(file_path), tenant_id=tenant_id)
+
+        # Persist document metadata in relational storage for document management
+        try:
+            db_doc = DBDocument(
+                document_id=result["document_id"],
+                tenant_id=tenant_id,
+                filename=file.filename,
+                chunk_count=result.get("chunk_count", 0),
+            )
+            db.add(db_doc)
+            await db.commit()
+        except Exception as db_err:
+            logger.warning("Could not persist DBDocument record", error=str(db_err))
+
         logger.info("Ingestion complete", file_name=file.filename, tenant_id=tenant_id, user_uuid=current_user.user_uuid)
         return result
     except Exception as e:

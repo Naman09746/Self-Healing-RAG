@@ -40,7 +40,7 @@ class ChromaStore:
             from chromadb.utils import embedding_functions
             self.embedding_function = embedding_functions.OllamaEmbeddingFunction(
                 url=f"{settings.OLLAMA_HOST}/api/embeddings",
-                model_name="nomic-embed-text"
+                model_name=settings.EMBEDDING_MODEL,
             )
         except Exception as e:
             logger.critical("Failed to initialize Ollama embedding function", error=str(e))

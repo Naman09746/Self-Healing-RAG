@@ -14,9 +14,11 @@ logger = get_logger(__name__)
 class LLMClient:
     """Production-grade async LLM client with retries, hard timeout, and OTel + LangSmith tracing."""
 
-    def __init__(self, model: str = None):
+    def __init__(self, model: str = None, host: str = None):
         self.model = model or settings.MODEL_NAME
+        self.host = host or settings.OLLAMA_HOST
         self._timeout = 90  # Hard timeout in seconds
+        self._async_client = ollama.AsyncClient(host=self.host)
 
     @retry(
         stop=stop_after_attempt(2),
@@ -57,7 +59,7 @@ class LLMClient:
                 if format:
                     kwargs["format"] = format
 
-                async_client = ollama.AsyncClient()
+                async_client = self._async_client
                 response = await asyncio.wait_for(
                     async_client.generate(**kwargs),
                     timeout=self._timeout,
@@ -116,7 +118,7 @@ class LLMClient:
             if format:
                 kwargs["format"] = format
 
-            async_client = ollama.AsyncClient()
+            async_client = self._async_client
             async for chunk in await async_client.generate(**kwargs, stream=True):
                 token: str = chunk.get("response", "") or ""
                 if token:

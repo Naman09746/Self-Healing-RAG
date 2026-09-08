@@ -27,7 +27,12 @@ def create_intake_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]]:
         history = await deps.session_memory.get_history(state.session_id, limit=5)
         history_str = "\n".join([f"{m['role']}: {m['content']}" for m in history])
 
-        past_insights = deps.memory_agent.retrieve_past_insights(state.query)
+        past_insights = []
+        if deps.memory_agent:
+            try:
+                past_insights = deps.memory_agent.retrieve_past_insights(state.query)
+            except Exception:
+                past_insights = []
 
         result = {
             "current_phase": "intake",
@@ -76,8 +81,8 @@ def create_planning_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]
         plan = {"is_complex": complexity_score > 0.3, "strategy": strategy, "reasoning": f"Adaptive: score={complexity_score:.2f}, k={target_k}"}
 
         # If the query is complex enough, also invoke the planner for deeper analysis
-        if complexity_score > 0.7:
-            deep_plan = deps.planner.create_plan(state.query)
+        if complexity_score > 0.7 and hasattr(deps, "planner") and deps.planner:
+            deep_plan = await deps.planner.create_plan(state.query)
             plan["sub_queries"] = deep_plan.get("sub_queries", [])
 
         return {

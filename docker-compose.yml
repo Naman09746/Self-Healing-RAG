@@ -35,6 +35,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    mem_limit: 512m
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -54,6 +55,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    mem_limit: 256m
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -76,6 +78,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    mem_limit: 512m
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -98,6 +101,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    mem_limit: 1024m
     security_opt:
       - no-new-privileges:true
     cap_drop:

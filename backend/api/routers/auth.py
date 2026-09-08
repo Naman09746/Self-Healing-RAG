@@ -1,11 +1,20 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from typing import Annotated, Optional
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from email_validator import validate_email, EmailNotValidError
+try:
+    from email_validator import validate_email, EmailNotValidError
+except ImportError:
+    import re
+    _EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    class EmailNotValidError(ValueError):
+        pass
+    def validate_email(email: str, check_deliverability: bool = False):
+        if not _EMAIL_REGEX.match(email):
+            raise EmailNotValidError("Invalid email address format")
+        return type("ValidEmail", (), {"normalized": email})
 
 from backend.core.security import verify_password, create_access_token, get_password_hash, decode_access_token
 from backend.core.audit import log_user_login, log_user_signup, log_auth_failure
@@ -108,17 +117,46 @@ async def signup(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 async def login(
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(DBUser).where(DBUser.email == form_data.username))
+    """Authenticate user and return JWT access token.
+    
+    Supports both application/json (frontend client) and
+    application/x-www-form-urlencoded (OAuth2 / Swagger UI).
+    """
+    content_type = request.headers.get("content-type", "")
+    username = ""
+    password = ""
+    client_ip = request.client.host if request.client else "unknown"
+
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+            username = body.get("email") or body.get("username", "")
+            password = body.get("password", "")
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body",
+            )
+    else:
+        form = await request.form()
+        username = form.get("username", "")
+        password = form.get("password", "")
+
+    if not username or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email/username and password are required",
+        )
+
+    result = await db.execute(select(DBUser).where(DBUser.email == username))
     user = result.scalar_one_or_none()
     
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        # Audit log auth failure
-        client_ip = form_data.client_host if hasattr(form_data, 'client_host') else "unknown"
+    if not user or not verify_password(password, user.hashed_password):
         log_auth_failure(
-            email=form_data.username,
+            email=username,
             ip_address=client_ip,
             reason="Invalid credentials",
         )
@@ -138,8 +176,8 @@ async def login(
     # Audit log login success
     log_user_login(
         email=user.email,
-        ip_address=form_data.client_host if hasattr(form_data, 'client_host') else "unknown",
-        user_agent="",
+        ip_address=client_ip,
+        user_agent=request.headers.get("user-agent", ""),
     )
 
     return Token(access_token=access_token, token_type="bearer")

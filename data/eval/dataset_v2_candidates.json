@@ -1,0 +1,32 @@
+[
+  {
+    "id": "cand_01",
+    "type": "synthetic_candidate",
+    "status": "candidate",
+    "human_reviewed": false,
+    "source_doc": "docs/architecture/router.md",
+    "query": "What machine learning classifier does the router agent use?",
+    "ground_truth": "The router agent uses an LLM classification prompt with structured intent output and confidence scoring.",
+    "context": "RouterAgent issues a zero-shot classification prompt to categorize incoming user queries into RAG, direct answer, or disambiguation intents."
+  },
+  {
+    "id": "cand_02",
+    "type": "synthetic_candidate",
+    "status": "candidate",
+    "human_reviewed": false,
+    "source_doc": "docs/storage/chroma.md",
+    "query": "How is the local fallback triggered in ChromaStore?",
+    "ground_truth": "When the HTTP connection to the ChromaDB server raises an exception, ChromaStore falls back to a PersistentClient pointing to ./chroma_data.",
+    "context": "ChromaStore initialization catches server connection exceptions and transparently switches to PersistentClient(path='./chroma_data')."
+  },
+  {
+    "id": "cand_03",
+    "type": "synthetic_candidate",
+    "status": "candidate",
+    "human_reviewed": false,
+    "source_doc": "docs/eval/metrics.md",
+    "query": "Which metrics are computed when RAGAS is unavailable?",
+    "ground_truth": "Deterministic heuristic metrics based on keyword overlap, length penalties, and token containment are computed.",
+    "context": "RAGASEvaluator includes a heuristic fallback when RAGAS library or LLM endpoints are unreachable."
+  }
+]

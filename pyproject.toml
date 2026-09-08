@@ -18,6 +18,10 @@ dependencies = [
     "redis>=5.0.0",
     "asyncpg>=0.28.0",
     "structlog>=23.1.0",
+    "pyjwt>=2.8.0",
+    "cryptography>=41.0.0",
+    "rank-bm25>=0.2.2",
+    "neo4j>=5.14.0",
     "python-multipart>=0.0.6",
     "pymupdf>=1.23.0",
     "tenacity>=8.2.0",
@@ -65,6 +69,9 @@ asyncio_mode = "auto"
 markers = [
     "e2e: marks end-to-end tests (requires full system integration)",
 ]
+
+[project.scripts]
+aes = "backend.experiments.cli:app"
 
 [tool.setuptools]
 packages = ["backend"]

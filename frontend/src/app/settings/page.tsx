@@ -38,19 +38,17 @@ function SettingSection({
 }) {
   return (
     <div
-      className="rounded-xl p-5 space-y-4"
-      style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}
+      className="rounded-xl p-5 space-y-4 bg-white border border-slate-200/80 shadow-xs"
     >
       <div className="flex items-start gap-3">
         <div
-          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-          style={{ background: "rgba(99,102,241,0.1)" }}
+          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-blue-50 border border-blue-200/60 text-blue-600"
         >
           {icon}
         </div>
         <div>
-          <h3 className="text-sm font-semibold" style={{ color: "#e8e8ed" }}>{title}</h3>
-          <p className="text-[11px] mt-0.5" style={{ color: "#525266" }}>{desc}</p>
+          <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+          <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
         </div>
       </div>
       <div className="pl-11">
@@ -93,7 +91,7 @@ export default function SettingsPage() {
     email: "admin@nexus-core.io",
     apiEndpoint: "http://localhost:8000/api/v1",
     apiKey: "sk-..." as string,
-    theme: "dark",
+    theme: "light",
     streamingEnabled: true,
     pipelineNotifications: true,
     hallucinationAlerts: true,
@@ -251,6 +249,8 @@ export default function SettingsPage() {
                 className="input text-xs"
                 style={{ background: "rgba(255,255,255,0.03)" }}
               >
+                <option value="llama3.2:1b">Llama 3.2 1B (M1 Optimized)</option>
+                <option value="llama3.2:3b">Llama 3.2 3B</option>
                 <option value="mistral:7b">Mistral 7B</option>
                 <option value="llama3:8b">Llama 3 8B</option>
                 <option value="llama3:70b">Llama 3 70B</option>

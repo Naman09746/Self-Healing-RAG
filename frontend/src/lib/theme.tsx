@@ -24,20 +24,20 @@ interface ThemeCtx {
 
 const ThemeContext = createContext<ThemeCtx | null>(null);
 
-/** Read stored preference, or "system" if absent */
+/** Read stored preference, or "light" if absent */
 function getStored(): Theme {
-  if (typeof window === "undefined") return "system";
+  if (typeof window === "undefined") return "light";
   const v = localStorage.getItem(STORAGE_KEY);
   if (v === "light" || v === "dark" || v === "system") return v;
-  return "system";
+  return "light";
 }
 
-/** Resolve user + OS to a concrete theme */
+/** Resolve user + OS to a concrete theme, defaulting to light */
 function resolve(t: Theme): ResolvedTheme {
   if (t === "light") return "light";
   if (t === "dark") return "dark";
-  if (typeof window === "undefined") return "dark";
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 /** Apply data-theme to <html>, called during render to avoid flash */

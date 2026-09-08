@@ -53,16 +53,16 @@ const BASE_EDGES: Edge[] = [
 ];
 
 const PHASE_COLORS: Record<string, string> = {
-  idle: "#18181b",
-  active: "#6366f1",
-  done: "#22c55e",
-  error: "#ef4444",
+  idle: "#f1f5f9",
+  active: "#2563eb",
+  done: "#059669",
+  error: "#dc2626",
 };
 
 const PHASE_BORDER_COLORS: Record<string, string> = {
-  idle: "#27272a",
-  active: "#818cf8",
-  done: "#22c55e",
+  idle: "#cbd5e1",
+  active: "#3b82f6",
+  done: "#10b981",
   error: "#ef4444",
 };
 
@@ -80,17 +80,17 @@ export default function LivePipeline({ activePhase, phaseStatus }: LivePipelineP
         return {
           ...node,
           style: {
-            background: color + "15",
-            color: status === "active" ? "#e4e4ed" : status === "done" ? "#22c55e" : status === "error" ? "#ef4444" : "#8b8b9e",
-            border: `1px solid ${borderColor}40`,
-            borderRadius: "10px",
-            padding: "10px 18px",
+            background: status === "active" ? "#eff6ff" : status === "done" ? "#ecfdf5" : status === "error" ? "#fef2f2" : "#ffffff",
+            color: status === "active" ? "#1d4ed8" : status === "done" ? "#059669" : status === "error" ? "#dc2626" : "#334155",
+            border: `1.5px solid ${borderColor}`,
+            borderRadius: "8px",
+            padding: "8px 16px",
             fontSize: "12px",
             fontWeight: status === "active" ? 600 : 500,
             fontFamily: "var(--font-sans)",
-            transition: "all 0.3s ease",
-            boxShadow: status === "active" ? `0 0 20px ${color}30` : "none",
-            width: 120,
+            transition: "all 0.25s ease",
+            boxShadow: status === "active" ? "0 4px 12px rgba(37, 99, 235, 0.15)" : "0 1px 3px rgba(15, 23, 42, 0.05)",
+            width: 125,
             textAlign: "center" as const,
           },
         };
@@ -110,14 +110,14 @@ export default function LivePipeline({ activePhase, phaseStatus }: LivePipelineP
           animated: isActiveForward || isActiveHealing,
           style: {
             ...(edge.style as object),
-            stroke: isDone ? "#22c55e" : isActiveForward || isActiveHealing ? "#818cf8" : "#27272a",
-            strokeWidth: isActiveForward || isActiveHealing ? 2 : 1,
-            opacity: isActiveForward || isActiveHealing ? 1 : 0.5,
-            transition: "all 0.3s ease",
+            stroke: isDone ? "#059669" : isActiveForward || isActiveHealing ? "#2563eb" : "#94a3b8",
+            strokeWidth: isActiveForward || isActiveHealing ? 2 : 1.2,
+            opacity: isActiveForward || isActiveHealing ? 1 : 0.7,
+            transition: "all 0.25s ease",
           },
           labelStyle: {
-            fontSize: "9px",
-            fill: isActiveHealing ? "#ef4444" : "#525266",
+            fontSize: "10px",
+            fill: isActiveHealing ? "#dc2626" : "#64748b",
             fontFamily: "var(--font-mono)",
             fontWeight: 600,
           },
@@ -127,7 +127,7 @@ export default function LivePipeline({ activePhase, phaseStatus }: LivePipelineP
   }, [activePhase, phaseStatus, setEdges]);
 
   return (
-    <div className="w-full h-full" style={{ background: "#07070b", borderRadius: "12px" }}>
+    <div className="w-full h-full border border-slate-200/80 bg-slate-50/50 rounded-xl overflow-hidden shadow-xs">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -142,8 +142,8 @@ export default function LivePipeline({ activePhase, phaseStatus }: LivePipelineP
         panOnDrag={false}
         zoomOnScroll={false}
       >
-        <Background color="rgba(255,255,255,0.03)" gap={24} />
-        <Controls showInteractive={false} className="!bg-transparent !border-none !shadow-none [&>button]:!bg-[#111119] [&>button]:!border [&>button]:!border-[rgba(255,255,255,0.06)] [&>button]:!text-[#8b8b9e] [&>button]:!rounded-md [&>button]:!w-7 [&>button]:!h-7" />
+        <Background color="#cbd5e1" gap={20} size={1} />
+        <Controls showInteractive={false} className="!bg-white !border !border-slate-200 !shadow-xs [&>button]:!bg-white [&>button]:!border-b [&>button]:!border-slate-200 [&>button]:!text-slate-600 [&>button]:!rounded-none [&>button]:!w-7 [&>button]:!h-7" />
       </ReactFlow>
     </div>
   );

@@ -323,3 +323,57 @@ export const metrics = {
   evaluation: (queryId: string) =>
     request<EvaluationResult>("GET", `/query/${queryId}/eval`),
 };
+
+// ─── Experiments API (AES) ─────────────────────────────────
+
+export interface ExperimentTrial {
+  trial_id: string;
+  trial_number?: number;
+  campaign_id?: string;
+  strategy?: string;
+  status?: string;
+  hypothesis?: string;
+  parameters: Record<string, any>;
+  objective_score?: number;
+  mean_quality?: number;
+  p95_latency_ms?: number;
+  mean_healing_count?: number;
+  metrics?: {
+    grounding_score: number;
+    faithfulness: number;
+    answer_relevance: number;
+    p95_latency_ms: number;
+    cost_usd: number;
+    composite_score: number;
+    confidence_interval_95?: [number, number];
+    p_value_vs_baseline?: number;
+    statistically_significant?: boolean;
+  };
+  statistical_summary?: {
+    is_statistically_significant: boolean;
+    wilcoxon_p_value?: number;
+    ci_lower_95: number;
+    ci_upper_95: number;
+  };
+  created_at?: string;
+}
+
+export interface ExperimentCampaign {
+  campaign_id: string;
+  name?: string;
+  objective?: string;
+  status?: string;
+  baseline_strategy: string;
+  dataset_version?: string;
+  best_trial_id?: string;
+  best_score?: number;
+  total_trials?: number;
+  trials?: ExperimentTrial[];
+  created_at: string;
+}
+
+export const experiments = {
+  list: () => request<ExperimentCampaign[]>("GET", "/experiments/campaigns"),
+  get: (id: string) => request<ExperimentCampaign>("GET", `/experiments/campaigns/${id}`),
+  report: (id: string) => request<string>("GET", `/experiments/campaigns/${id}/report`),
+};

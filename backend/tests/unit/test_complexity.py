@@ -277,9 +277,11 @@ class TestFullPipeline:
     def test_rewritten_query_pipeline(self):
         """Rewritten/healed queries should also go through the pipeline."""
         raw_query = "Explain the relationship between AI and ethics."
-        rewritten_query = "How do machine learning bias detection frameworks mitigate "
-        "unfair discrimination in automated hiring systems, and what regulatory "
-        "compliance requirements apply under GDPR Article 22?"
+        rewritten_query = (
+            "How do machine learning bias detection frameworks mitigate "
+            "unfair discrimination in automated hiring systems, and what regulatory "
+            "compliance requirements apply under GDPR Article 22?"
+        )
         
         raw_score = compute_complexity(raw_query)
         rewritten_score = compute_complexity(rewritten_query)

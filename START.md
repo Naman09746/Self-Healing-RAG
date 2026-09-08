@@ -44,6 +44,34 @@ open http://localhost:8000/docs  # API Docs
 
 ---
 
+### 🍏 Option 4: Mac M1 / Apple Silicon (Lightweight & Smooth)
+
+> Optimized for 8GB/16GB unified memory Macs using native Metal GPU.
+
+```bash
+# 1. Start native Ollama with Metal GPU (Terminal 1)
+ollama serve
+
+# 2. Pull lightweight models (Terminal 2 — one time setup)
+ollama pull llama3.2:1b
+ollama pull nomic-embed-text
+
+# 3. Start lightweight storage containers (no heavy Neo4j/Ollama in Docker)
+docker compose up -d chromadb redis postgres
+
+# 4. Run Backend API (Terminal 2)
+source .venv/bin/activate
+uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload
+# → http://localhost:8000/docs
+
+# 5. Run Frontend Dashboard (Terminal 3)
+cd frontend
+npm run dev
+# → http://localhost:3000
+```
+
+---
+
 ## 🚀 Option 2: Manual (Backend only)
 
 ```bash

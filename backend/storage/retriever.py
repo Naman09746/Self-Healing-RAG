@@ -159,7 +159,10 @@ class HybridRetriever:
         return final_results
 
     def _retrieve_from_graph(self, query: str) -> List[str]:
-        """Extract entities from query and traverse relationships."""
+        """Extract entities from query and traverse relationships in a single batched Cypher query."""
+        if not self.graph or not getattr(self.graph, "_driver", None):
+            return []
+
         tracer = get_tracer()
         with tracer.start_as_current_span("graph_search") as span:
             # Simple stop words to avoid useless graph lookups
@@ -167,19 +170,24 @@ class HybridRetriever:
             keywords = [w.strip("?.,!") for w in query.lower().split() if w.lower() not in stop_words and len(w) > 3]
             span.set_attribute("keywords_count", len(keywords))
 
-            results = []
-            for word in keywords:
-                cypher = (
-                    "MATCH (e {name: $name})-[r]->(related) "
-                    "RETURN e.name, type(r), related.name LIMIT 5"
-                )
-                try:
-                    graph_data = self.graph.query_graph(cypher, {"name": word})
-                    if graph_data:
-                        for record in graph_data:
-                            results.append(f"{record['e.name']} {record['type(r)']} {record['related.name']}")
-                except Exception as e:
-                    logger.error(f"Graph query failed for word '{word}'", error=str(e))
+            if not keywords:
+                span.set_attribute("results_count", 0)
+                return []
 
-            span.set_attribute("results_count", len(set(results)))
-            return list(set(results))
+            results = []
+            cypher = (
+                "MATCH (e)-[r]->(related) "
+                "WHERE toLower(e.name) IN $names "
+                "RETURN e.name, type(r), related.name LIMIT 15"
+            )
+            try:
+                graph_data = self.graph.query_graph(cypher, {"names": keywords})
+                if graph_data:
+                    for record in graph_data:
+                        results.append(f"{record['e.name']} {record['type(r)']} {record['related.name']}")
+            except Exception as e:
+                logger.error("Batched graph query failed", error=str(e))
+
+            unique_results = list(set(results))
+            span.set_attribute("results_count", len(unique_results))
+            return unique_results

@@ -36,27 +36,34 @@ export default function SystemStatus() {
   }, [checkHealth]);
 
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-2">
       {services.map((svc) => (
         <div
           key={svc.id}
-          className="flex items-center gap-1.5 px-2 py-1 rounded-md transition-all"
-          style={{
-            background: svc.status === "healthy" ? "rgba(34,197,94,0.06)" : svc.status === "degraded" ? "rgba(245,158,11,0.06)" : svc.status === "down" ? "rgba(239,68,68,0.06)" : "rgba(255,255,255,0.03)",
-            opacity: loading ? 0.5 : 1,
-          }}
+          className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium border transition-all ${
+            svc.status === "healthy"
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+              : svc.status === "degraded"
+              ? "bg-amber-50 text-amber-700 border-amber-200/80"
+              : svc.status === "down"
+              ? "bg-rose-50 text-rose-700 border-rose-200/80"
+              : "bg-slate-100 text-slate-600 border-slate-200"
+          }`}
+          style={{ opacity: loading ? 0.6 : 1 }}
           title={`${svc.label}: ${svc.status}${svc.latency ? ` (${svc.latency}ms)` : ""}`}
         >
           <span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{
-              background: svc.status === "healthy" ? "#22c55e" : svc.status === "degraded" ? "#f59e0b" : svc.status === "down" ? "#ef4444" : "#525266",
-              boxShadow: svc.status === "healthy" ? "0 0 4px rgba(34,197,94,0.5)" : "none",
-            }}
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              svc.status === "healthy"
+                ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]"
+                : svc.status === "degraded"
+                ? "bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]"
+                : svc.status === "down"
+                ? "bg-rose-500"
+                : "bg-slate-400"
+            }`}
           />
-          <span className="text-[10px] font-medium" style={{ color: "var(--text-secondary)" }}>
-            {svc.label}
-          </span>
+          <span>{svc.label}</span>
         </div>
       ))}
     </div>

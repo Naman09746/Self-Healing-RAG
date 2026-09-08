@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from backend.memory.session import SessionMemory
     from backend.memory.query_cache import QueryCache
     from backend.core.telemetry_collector import TelemetryCollector
+    from backend.core.config import Settings
 
 
 class ServiceContainer:
@@ -32,7 +33,8 @@ class ServiceContainer:
     Use ``get_container()`` to access the global instance.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, settings_override: Optional["Settings"] = None) -> None:
+        self.settings: Optional["Settings"] = settings_override
         self._initialized: bool = False
 
         # All services start as None — populated in init()
@@ -48,6 +50,13 @@ class ServiceContainer:
         self.session_memory: Optional["SessionMemory"] = None
         self.query_cache: Optional["QueryCache"] = None
         self.telemetry_collector: Optional["TelemetryCollector"] = None
+
+    @classmethod
+    def build(cls, settings_override: Optional["Settings"] = None) -> "ServiceContainer":
+        """Build and initialize an isolated ServiceContainer instance."""
+        container = cls(settings_override=settings_override)
+        container.init()
+        return container
 
     def init(self) -> None:
         """Initialize all services. Called once during app lifespan startup."""
@@ -67,7 +76,8 @@ class ServiceContainer:
         from backend.memory.query_cache import QueryCache
         from backend.core.telemetry_collector import telemetry_collector
 
-        self.store = ChromaStore()
+        col_name = self.settings.CHROMA_COLLECTION_NAME if self.settings else None
+        self.store = ChromaStore(collection_name=col_name) if col_name else ChromaStore()
         self.hybrid_retriever = HybridRetriever(self.store)
         self.reranker = reranker
         self.planner = PlannerAgent()
