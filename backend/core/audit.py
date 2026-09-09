@@ -85,14 +85,21 @@ class AuditLogger:
             return
         try:
             import redis as redis_module
-            self._redis = redis_module.Redis(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                password=settings.REDIS_PASSWORD or None,
-                ssl=settings.REDIS_USE_SSL,
-                decode_responses=True,
-                socket_connect_timeout=1,
-            )
+            if getattr(settings, "REDIS_URL", None):
+                self._redis = redis_module.from_url(
+                    settings.REDIS_URL,
+                    decode_responses=True,
+                    socket_connect_timeout=2,
+                )
+            else:
+                self._redis = redis_module.Redis(
+                    host=settings.REDIS_HOST,
+                    port=settings.REDIS_PORT,
+                    password=settings.REDIS_PASSWORD or None,
+                    ssl=settings.REDIS_USE_SSL,
+                    decode_responses=True,
+                    socket_connect_timeout=1,
+                )
             self._redis.ping()
             self._redis_available = True
         except Exception:

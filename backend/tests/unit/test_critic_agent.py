@@ -271,3 +271,51 @@ class TestVerdictHelpers:
         assert Verdict.PARTIALLY_SUPPORTED.is_negative is False
         assert Verdict.UNSUPPORTED.is_negative is True
         assert Verdict.CONTRADICTED.is_negative is True
+
+
+class TestFastPathGrounding:
+    """Phase 1C: Single-pass batch critic for simple queries."""
+
+    async def test_fast_path_supported(self, critic_agent):
+        critic_agent.verifier.client = MagicMock()
+        critic_agent.verifier.client.generate = AsyncMock(
+            return_value='{"grounding_score": 0.95, "is_hallucinated": false, "reasoning": "Fully supported."}'
+        )
+
+        result = await critic_agent.verify_grounding_fast(
+            query="What is 2+2?",
+            answer="2+2 is 4",
+            context_chunks=["Basic arithmetic says 2+2 equals 4."],
+        )
+        assert result["grounding_score"] == 0.95
+        assert result["is_hallucinated"] is False
+        assert result["verification_mode"] == "fast_pass"
+        assert result["healing_target"] == "none"
+
+    async def test_fast_path_hallucinated(self, critic_agent):
+        critic_agent.verifier.client = MagicMock()
+        critic_agent.verifier.client.generate = AsyncMock(
+            return_value='{"grounding_score": 0.1, "is_hallucinated": true, "reasoning": "Unsupported claim."}'
+        )
+
+        result = await critic_agent.verify_grounding_fast(
+            query="What is the capital of Mars?",
+            answer="The capital is Olympus City",
+            context_chunks=["Mars has no known cities or inhabitants."],
+        )
+        assert result["grounding_score"] == 0.1
+        assert result["is_hallucinated"] is True
+        assert result["verification_mode"] == "fast_pass"
+        assert result["healing_target"] == "targeted_healing"
+
+    async def test_fast_path_fallback_on_error(self, critic_agent):
+        critic_agent.verifier.client = MagicMock()
+        critic_agent.verifier.client.generate = AsyncMock(side_effect=RuntimeError("LLM error"))
+
+        result = await critic_agent.verify_grounding_fast(
+            query="Simple query",
+            answer="Simple answer",
+            context_chunks=["Context"],
+        )
+        assert result["verification_mode"] == "fast_pass_fallback"
+        assert result["is_hallucinated"] is False

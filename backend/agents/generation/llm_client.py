@@ -12,13 +12,30 @@ logger = get_logger(__name__)
 
 
 class LLMClient:
-    """Production-grade async LLM client with retries, hard timeout, and OTel + LangSmith tracing."""
+    """Production-grade async LLM client with retries, hard timeout, and OTel + LangSmith tracing.
+    
+    Supports Ollama (default) as well as OpenAI-compatible providers (Groq, OpenRouter, OpenAI, vLLM).
+    """
 
     def __init__(self, model: str = None, host: str = None):
         self.model = model or settings.MODEL_NAME
         self.host = host or settings.OLLAMA_HOST
-        self._timeout = 90  # Hard timeout in seconds
-        self._async_client = ollama.AsyncClient(host=self.host)
+        self._timeout = getattr(settings, "LLM_TIMEOUT", 30)  # Configured timeout in seconds
+        self.provider = getattr(settings, "LLM_PROVIDER", "ollama").lower()
+        self._openai_client = None
+        self._async_client = None
+
+        if self.provider in ("openai", "groq", "openrouter") or bool(getattr(settings, "OPENAI_API_KEY", None)):
+            try:
+                from openai import AsyncOpenAI
+                api_key = getattr(settings, "OPENAI_API_KEY", "") or "sk-dummy"
+                base_url = getattr(settings, "OPENAI_BASE_URL", "") or None
+                self._openai_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+            except Exception as e:
+                logger.warning("Could not initialize AsyncOpenAI, falling back to Ollama", error=str(e))
+                self._async_client = ollama.AsyncClient(host=self.host)
+        else:
+            self._async_client = ollama.AsyncClient(host=self.host)
 
     @retry(
         stop=stop_after_attempt(2),
@@ -48,23 +65,39 @@ class LLMClient:
             start_time = time.time()
 
             try:
-                kwargs: dict = {
-                    "model": self.model,
-                    "prompt": prompt,
-                    "options": {
-                        "num_predict": 512,
+                if self._openai_client is not None:
+                    kwargs: dict = {
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.1,
-                    },
-                }
-                if format:
-                    kwargs["format"] = format
+                        "max_tokens": 512,
+                    }
+                    if format == "json":
+                        kwargs["response_format"] = {"type": "json_object"}
+                    response = await asyncio.wait_for(
+                        self._openai_client.chat.completions.create(**kwargs),
+                        timeout=self._timeout,
+                    )
+                    result = response.choices[0].message.content or ""
+                else:
+                    kwargs: dict = {
+                        "model": self.model,
+                        "prompt": prompt,
+                        "keep_alive": "10m",
+                        "options": {
+                            "num_predict": 512,
+                            "temperature": 0.1,
+                        },
+                    }
+                    if format:
+                        kwargs["format"] = format
 
-                async_client = self._async_client
-                response = await asyncio.wait_for(
-                    async_client.generate(**kwargs),
-                    timeout=self._timeout,
-                )
-                result = response["response"]
+                    async_client = self._async_client
+                    response = await asyncio.wait_for(
+                        async_client.generate(**kwargs),
+                        timeout=self._timeout,
+                    )
+                    result = response["response"]
                 duration_ms = (time.time() - start_time) * 1000
 
                 span.set_attribute("response_length", len(result))
@@ -97,9 +130,9 @@ class LLMClient:
     async def generate_stream(
         self, prompt: str, format: str = None
     ) -> AsyncGenerator[str, None]:
-        """Stream tokens from the LLM via Ollama's async streaming API.
+        """Stream tokens from the LLM via Ollama or OpenAI-compatible async streaming API.
 
-        Each iteration yields a single decoded token.  The caller may cancel
+        Each iteration yields a single decoded token. The caller may cancel
         iteration to implement client-disconnect / backpressure semantics.
 
         Yields:
@@ -107,22 +140,38 @@ class LLMClient:
         """
         logger.info("LLM Streaming request", model=self.model)
         try:
-            kwargs: dict = {
-                "model": self.model,
-                "prompt": prompt,
-                "options": {
-                    "num_predict": 512,
+            if self._openai_client is not None:
+                kwargs: dict = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.1,
-                },
-            }
-            if format:
-                kwargs["format"] = format
+                    "max_tokens": 512,
+                    "stream": True,
+                }
+                if format == "json":
+                    kwargs["response_format"] = {"type": "json_object"}
+                stream_resp = await self._openai_client.chat.completions.create(**kwargs)
+                async for chunk in stream_resp:
+                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            else:
+                kwargs: dict = {
+                    "model": self.model,
+                    "prompt": prompt,
+                    "keep_alive": "10m",
+                    "options": {
+                        "num_predict": 512,
+                        "temperature": 0.1,
+                    },
+                }
+                if format:
+                    kwargs["format"] = format
 
-            async_client = self._async_client
-            async for chunk in await async_client.generate(**kwargs, stream=True):
-                token: str = chunk.get("response", "") or ""
-                if token:
-                    yield token
+                async_client = self._async_client
+                async for chunk in await async_client.generate(**kwargs, stream=True):
+                    token: str = chunk.get("response", "") or ""
+                    if token:
+                        yield token
         except asyncio.CancelledError:
             logger.warning("LLM stream cancelled", model=self.model)
             raise

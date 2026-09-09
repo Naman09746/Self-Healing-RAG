@@ -1,9 +1,12 @@
 import asyncio
+import json
+import time
 from typing import Optional, Annotated
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from backend.core.logging import get_logger
+from backend.core.metrics import metrics
 
 from backend.graph.runner import run_rag_pipeline
 from backend.graph.stream_runner import stream_rag_pipeline
@@ -26,6 +29,9 @@ class QueryResponse(BaseModel):
     status: str
     grounding_score: float
     retry_count: int
+    complexity_score: Optional[float] = 0.0
+    verification_mode: Optional[str] = ""
+    is_hallucinated: Optional[bool] = False
 
 
 @router.post("", response_model=QueryResponse)
@@ -57,6 +63,7 @@ async def query_rag(
             else f"{user_uuid}_default"
         )
 
+        t0 = time.perf_counter()
         result = await run_rag_pipeline(
             graph,
             svc,
@@ -64,6 +71,16 @@ async def query_rag(
             user_session_id,
             tenant_id=tenant_id,
             user_uuid=user_uuid,
+        )
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+
+        # Record dynamic telemetry
+        metrics.record_query_result(
+            latency_ms=latency_ms,
+            grounding_score=result.get("grounding_score", 0.0),
+            is_hallucinated=result.get("is_hallucinated", False),
+            healing_triggered=result.get("retry_count", 0) > 0,
+            cache_hit=result.get("status") == "cached",
         )
 
         # Clean the session ID prefix for the frontend
@@ -77,6 +94,9 @@ async def query_rag(
             status=result.get("status", "completed"),
             grounding_score=result.get("grounding_score", 0.0),
             retry_count=result.get("retry_count", 0),
+            complexity_score=result.get("complexity_score", 0.0),
+            verification_mode=result.get("verification_mode", ""),
+            is_hallucinated=result.get("is_hallucinated", False),
         )
     except Exception as e:
         logger.error("Query failed", error=str(e), user_uuid=current_user.user_uuid)
@@ -130,6 +150,8 @@ async def query_rag_stream(
     )
 
     async def event_generator():
+        t0 = time.perf_counter()
+        last_metadata = None
         try:
             async for sse_event in stream_rag_pipeline(
                 graph,
@@ -139,7 +161,29 @@ async def query_rag_stream(
                 tenant_id=tenant_id,
                 user_uuid=user_uuid,
             ):
+                if sse_event.startswith("event: metadata"):
+                    try:
+                        lines = sse_event.strip().split("\n")
+                        for line in lines:
+                            if line.startswith("data: "):
+                                last_metadata = json.loads(line[6:])
+                    except Exception:
+                        pass
                 yield sse_event
+
+            latency_ms = (time.perf_counter() - t0) * 1000.0
+            grounding_score = last_metadata.get("grounding_score", 0.0) if last_metadata else 0.0
+            is_hallucinated = last_metadata.get("is_hallucinated", False) if last_metadata else False
+            healing_triggered = (last_metadata.get("retry_count", 0) > 0) if last_metadata else False
+            cache_hit = (last_metadata.get("status") == "cached") if last_metadata else False
+
+            metrics.record_query_result(
+                latency_ms=latency_ms,
+                grounding_score=grounding_score,
+                is_hallucinated=is_hallucinated,
+                healing_triggered=healing_triggered,
+                cache_hit=cache_hit,
+            )
         except asyncio.CancelledError:
             logger.info("Client disconnected from SSE stream", session_id=user_session_id)
         except Exception as exc:
@@ -155,3 +199,4 @@ async def query_rag_stream(
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         },
     )
+

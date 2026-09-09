@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional
 import uuid
 import json
 from opentelemetry import trace
+from backend.core.config import settings
 from backend.core.logging import get_logger
 from backend.core.observability import get_tracer, set_request_id, get_request_id
 
@@ -84,7 +85,7 @@ async def run_rag_pipeline(
             "user_uuid": user_uuid or "",
             "retrieved_chunks": [],
             "retry_count": 0,
-            "max_retries": 3,
+            "max_retries": settings.MAX_RETRIES,
             "error_log": [],
             "grounding_score": 0.0,
             "is_hallucinated": False,
@@ -129,6 +130,9 @@ async def run_rag_pipeline(
                 "status": final_state.get("current_phase"),
                 "grounding_score": final_state.get("grounding_score", 0.0),
                 "retry_count": final_state.get("retry_count", 0),
+                "complexity_score": final_state.get("complexity_score", 0.0),
+                "verification_mode": final_state.get("verification_mode", ""),
+                "is_hallucinated": final_state.get("is_hallucinated", False),
             }
         except Exception as e:
             pipeline_span.record_exception(e)

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Brain,
   Mail,
@@ -12,14 +13,16 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
-  Sparkles,
-  GitBranch,
-  MessageSquare,
+  ShieldCheck,
+  Zap,
+  Layers,
 } from "lucide-react";
 import { auth, setTokens } from "@/lib/api";
+import { useToast } from "@/components/Toast";
 
 export default function AuthPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,11 +30,9 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // Check if already authenticated
-    const token = localStorage.getItem("rag_access_token");
+    const token = typeof window !== "undefined" ? localStorage.getItem("rag_access_token") : null;
     if (token) {
       router.push("/dashboard");
     }
@@ -46,213 +47,218 @@ export default function AuthPage() {
       if (mode === "login") {
         const result = await auth.login(email, password);
         setTokens(result.access_token, result.refresh_token);
-        setSuccess(true);
-        setTimeout(() => router.push("/dashboard"), 500);
+        toast.success("Signed in successfully. Welcome back!");
+        router.push("/dashboard");
       } else {
         const result = await auth.signup(email, password, name);
         setTokens(result.access_token, result.refresh_token);
-        setSuccess(true);
-        setTimeout(() => router.push("/dashboard"), 500);
+        toast.success("Account created successfully!");
+        router.push("/dashboard");
       }
     } catch (err) {
-      setError((err as Error).message || "Authentication failed. Please try again.");
+      const msg = (err as Error).message || "Authentication failed. Please check your credentials.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleDemoFill = () => {
+    setEmail("admin@self-healing-rag.local");
+    setPassword("Admin12345!");
+    if (mode === "signup") setName("Production Admin");
+  };
+
   return (
-    <div className="min-h-screen flex" style={{ background: "#08080c" }}>
-      {/* Left — Brand */}
-      <div className="hidden lg:flex w-1/2 relative overflow-hidden items-center justify-center">
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 60% 50% at 30% 50%, rgba(99,102,241,0.1) 0%, transparent 70%), radial-gradient(ellipse 40% 40% at 70% 80%, rgba(139,92,246,0.06) 0%, transparent 60%)",
-          }}
-        />
-        <div className="relative z-10 text-center max-w-md">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
-            style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-          >
-            <Brain size={32} className="text-white" />
+    <div className="min-h-screen flex flex-col lg:flex-row bg-slate-50 text-slate-900 selection:bg-blue-100">
+      {/* Left — Brand Panel */}
+      <div className="hidden lg:flex w-1/2 relative overflow-hidden bg-gradient-to-br from-blue-900 via-indigo-950 to-slate-950 text-white p-12 flex-col justify-between">
+        <div className="relative z-10">
+          <Link href="/" className="inline-flex items-center gap-2.5 group">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
+              <Brain size={22} className="text-white" />
+            </div>
+            <div>
+              <div className="text-base font-bold tracking-tight">Self-Healing RAG</div>
+              <div className="text-[11px] text-blue-300 font-medium">Enterprise Pipeline</div>
+            </div>
+          </Link>
+        </div>
+
+        <div className="relative z-10 max-w-md my-auto space-y-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-400/20 text-blue-300 text-xs font-semibold">
+            <ShieldCheck size={14} className="text-blue-400" />
+            <span>Multi-Agent Hallucination Firewall</span>
           </div>
-          <h1 className="text-3xl font-bold mb-3" style={{ color: "#e8e8ed" }}>
-            Nexus Core
+
+          <h1 className="text-3xl font-extrabold tracking-tight text-white leading-tight">
+            Autonomous Knowledge Retrieval with Real-Time Grounding
           </h1>
-          <p className="text-sm leading-relaxed" style={{ color: "#8b8b9e" }}>
-            Enterprise-grade self-healing RAG platform.
-            <br />
-            Verified answers from your knowledge base.
+
+          <p className="text-sm text-slate-300 leading-relaxed">
+            Every answer is decomposed into atomic factual claims, cross-checked against vector and graph memory, and healed automatically before escaping to the user.
           </p>
-          <div className="mt-8 space-y-3 text-left max-w-xs mx-auto">
-            {[
-              "Multi-agent pipeline with self-healing",
-              "Real-time hallucination detection",
-              "Enterprise-grade security & RBAC",
-            ].map((item) => (
-              <div key={item} className="flex items-center gap-3 text-sm" style={{ color: "#8b8b9e" }}>
-                <CheckCircle size={14} style={{ color: "#22c55e" }} />
-                {item}
+
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center gap-3 text-xs text-slate-200">
+              <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                <CheckCircle size={13} />
               </div>
-            ))}
+              <span>Knowledge-absence fast-fail (~200ms early exit)</span>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-slate-200">
+              <div className="w-6 h-6 rounded-lg bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                <Zap size={13} />
+              </div>
+              <span>Adaptive single-pass critic for simple queries</span>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-slate-200">
+              <div className="w-6 h-6 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                <Layers size={13} />
+              </div>
+              <span>Hybrid dense (Chroma) + sparse (BM25) + graph (Neo4j)</span>
+            </div>
           </div>
+        </div>
+
+        <div className="relative z-10 text-xs text-slate-400 flex items-center justify-between border-t border-white/10 pt-6">
+          <span>Enterprise Edition v2.4</span>
+          <span>OpenTelemetry &amp; Prometheus Verified</span>
         </div>
       </div>
 
-      {/* Right — Form */}
-      <div className="flex-1 flex items-center justify-center p-5">
-        <div className="w-full max-w-sm">
-          {/* Logo (mobile) */}
-          <div className="lg:hidden flex items-center gap-2.5 mb-8 justify-center">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-            >
-              <Brain size={16} className="text-white" />
+      {/* Right — Form Panel */}
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-12">
+        <div className="w-full max-w-md bg-white border border-slate-200/90 rounded-2xl p-7 sm:p-8 shadow-sm">
+          {/* Mobile Header */}
+          <div className="lg:hidden flex items-center gap-2.5 mb-6">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+              <Brain size={18} />
             </div>
-            <span className="text-sm font-semibold" style={{ color: "#e8e8ed" }}>
-              Nexus Core
-            </span>
+            <span className="text-base font-bold text-slate-900">Self-Healing RAG</span>
           </div>
 
-          <div className="text-center mb-8">
-            <h2 className="text-xl font-bold mb-1" style={{ color: "#e8e8ed" }}>
-              {mode === "login" ? "Welcome back" : "Create account"}
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+              {mode === "login" ? "Sign in to workspace" : "Create enterprise account"}
             </h2>
-            <p className="text-xs" style={{ color: "#525266" }}>
+            <p className="text-xs text-slate-500 mt-1">
               {mode === "login"
-                ? "Sign in to access your knowledge base"
-                : "Start with a free account"}
+                ? "Access pipeline telemetry, document vault, and AES experimentation."
+                : "Initialize your workspace credentials to begin indexing and querying."}
             </p>
           </div>
 
           {error && (
-            <div className="alert alert-error mb-4">
-              <AlertCircle size={14} />
+            <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-xs text-rose-800">
+              <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
               <span>{error}</span>
-            </div>
-          )}
-
-          {success && (
-            <div className="alert mb-4" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.18)", color: "#22c55e", borderRadius: "10px", padding: "10px 14px", fontSize: "12px" }}>
-              <CheckCircle size={14} />
-              <span>Authentication successful! Redirecting...</span>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "signup" && (
               <div>
-                <label className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: "#525266" }}>
-                  Name
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Full Name
                 </label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="input text-xs"
-                  placeholder="Your name"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                  placeholder="Alex Morgan"
                   required
                 />
               </div>
             )}
 
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: "#525266" }}>
-                Email
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Corporate Email
               </label>
-              <div className="input-icon">
-                <Mail size={13} className="icon" />
+              <div className="relative">
+                <Mail size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="input text-xs pl-9"
-                  placeholder="you@company.com"
+                  className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                  placeholder="operator@company.io"
                   required
                 />
               </div>
             </div>
 
             <div>
-              <label className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: "#525266" }}>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Password
               </label>
               <div className="relative">
-                <Lock size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#525266" }} />
+                <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="input text-xs pl-9 pr-9"
-                  placeholder="••••••••"
+                  className="w-full pl-9 pr-10 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                  placeholder="••••••••••••"
                   required
                   minLength={8}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2"
-                  style={{ color: "#525266" }}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
-                  {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
             </div>
 
             <button
               type="submit"
-              disabled={loading || success}
-              className="btn btn-primary w-full justify-center text-sm py-2.5"
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50"
             >
               {loading ? (
                 <>
-                  <Loader2 size={14} className="animate-spin" /> Signing in...
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Verifying credentials…</span>
                 </>
               ) : (
                 <>
-                  {mode === "login" ? "Sign In" : "Create Account"}{" "}
+                  <span>{mode === "login" ? "Sign In to Console" : "Create Workspace"}</span>
                   <ArrowRight size={14} />
                 </>
               )}
             </button>
           </form>
 
-          <div className="mt-6">
-            <div className="relative mb-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }} />
-              </div>
-              <div className="relative flex justify-center text-[10px]" style={{ color: "#525266" }}>
-                <span className="px-2" style={{ background: "#08080c" }}>or continue with</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button className="btn btn-outline text-xs justify-center py-2">
-                <GitBranch size={13} /> GitHub
-              </button>
-              <button className="btn btn-outline text-xs justify-center py-2">
-                <MessageSquare size={13} /> SSO
-              </button>
-            </div>
+          {/* Quick Demo Credentials Fill */}
+          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span className="text-slate-500">Need quick testing credentials?</span>
+            <button
+              type="button"
+              onClick={handleDemoFill}
+              className="font-medium text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Fill Demo Login
+            </button>
           </div>
 
-          <p className="text-center mt-6 text-xs" style={{ color: "#525266" }}>
+          <div className="mt-5 text-center text-xs text-slate-500">
             {mode === "login" ? "Don't have an account? " : "Already have an account? "}
             <button
               onClick={() => {
                 setMode(mode === "login" ? "signup" : "login");
                 setError(null);
               }}
-              className="font-medium hover:text-indigo-400 transition-colors"
-              style={{ color: "#a5b4fc" }}
+              className="font-semibold text-blue-600 hover:text-blue-700 ml-1"
             >
-              {mode === "login" ? "Sign up" : "Sign in"}
+              {mode === "login" ? "Create one" : "Sign in"}
             </button>
-          </p>
+          </div>
         </div>
       </div>
     </div>

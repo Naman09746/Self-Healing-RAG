@@ -96,6 +96,9 @@ async def stream_rag_pipeline(
                 "status": "cached",
                 "grounding_score": 0.0,
                 "retry_count": 0,
+                "complexity_score": 0.0,
+                "verification_mode": "cached",
+                "is_hallucinated": False,
             },
         )
         return
@@ -218,6 +221,9 @@ async def stream_rag_pipeline(
                 "status": final_state.get("current_phase", "completed"),
                 "grounding_score": final_state.get("grounding_score", 0.0),
                 "retry_count": final_state.get("retry_count", 0),
+                "complexity_score": final_state.get("complexity_score", 0.0),
+                "verification_mode": final_state.get("verification_mode", ""),
+                "is_hallucinated": final_state.get("is_hallucinated", False),
             },
         )
 

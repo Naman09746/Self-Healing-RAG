@@ -24,15 +24,25 @@ def create_intake_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]]:
 
         original_query = state.query
 
-        history = await deps.session_memory.get_history(state.session_id, limit=5)
-        history_str = "\n".join([f"{m['role']}: {m['content']}" for m in history])
-
-        past_insights = []
-        if deps.memory_agent:
+        # Parallel intake enrichment (Phase 1B)
+        async def _get_history():
             try:
-                past_insights = deps.memory_agent.retrieve_past_insights(state.query)
-            except Exception:
-                past_insights = []
+                return await deps.session_memory.get_history(state.session_id, limit=5)
+            except Exception as e:
+                logger.debug("Session memory get_history failed", error=str(e))
+                return []
+
+        async def _get_insights():
+            if not deps.memory_agent:
+                return []
+            try:
+                return await asyncio.to_thread(deps.memory_agent.retrieve_past_insights, state.query)
+            except Exception as e:
+                logger.debug("Past insights retrieval skipped", error=str(e))
+                return []
+
+        history, past_insights = await asyncio.gather(_get_history(), _get_insights())
+        history_str = "\n".join([f"{m['role']}: {m['content']}" for m in history]) if history else ""
 
         result = {
             "current_phase": "intake",
@@ -130,12 +140,28 @@ def create_retrieval_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]
                 )
             )
 
-        result = {
+        # Check for knowledge absence (Phase 1A fast-fail)
+        has_relevant = any(c.score >= settings.RELEVANCE_THRESHOLD for c in chunks)
+        no_relevant = (len(chunks) == 0) or (not has_relevant)
+
+        result: Dict[str, Any] = {
             "retrieved_chunks": chunks,
             "current_phase": "retrieval",
             "chunks_retrieved": len(chunks),
             "target_k": k,  # Preserve for downstream telemetry / debugging
+            "no_relevant_chunks": no_relevant,
         }
+
+        if no_relevant:
+            logger.info(
+                "Fast-fail: no relevant chunks above threshold",
+                chunks_count=len(chunks),
+                threshold=settings.RELEVANCE_THRESHOLD,
+            )
+            result["generation_result"] = GenerationResult(
+                answer="Information not available in knowledge base.",
+                model="none",
+            )
 
         await deps.telemetry_collector.log_trace(
             session_id=state.session_id,
@@ -215,9 +241,15 @@ def create_critic_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]]:
             }
 
         context = [c.content for c in state.retrieved_chunks]
-        result = await deps.critic.verify_grounding(
-            state.query, gen_result.answer, context, history=state.history_context
-        )
+        # Critic fast-path for simple queries (Decision 1C / Phase 1C)
+        if state.complexity_score < 0.3 and hasattr(deps.critic, "verify_grounding_fast"):
+            result = await deps.critic.verify_grounding_fast(
+                state.query, gen_result.answer, context, history=state.history_context
+            )
+        else:
+            result = await deps.critic.verify_grounding(
+                state.query, gen_result.answer, context, history=state.history_context
+            )
 
         verification_mode = result.get("verification_mode", "claims_verified")
         error_entry = [reason.strip() for reason in [result.get("reasoning", "")] if reason.strip()]
@@ -277,7 +309,15 @@ def create_output_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]]:
         logger.info("Node: Output")
 
         gen_result = state.generation_result
-        answer = gen_result.answer if gen_result else "No answer generated."
+        answer = (
+            state.final_answer
+            or (gen_result.answer if gen_result else None)
+            or ("Information not available in knowledge base." if state.no_relevant_chunks else "No answer generated.")
+        )
+
+        # In fast-fail streaming path, emit token directly if not streamed during generation
+        if state.no_relevant_chunks and getattr(state, "_token_queue", None) is not None:
+            await state._token_queue.put(answer)
 
         await deps.session_memory.add_message(
             state.session_id, "user", state.original_query or state.query

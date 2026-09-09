@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, field_validator
+from typing import Any
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -33,11 +34,24 @@ class Settings(BaseSettings):
                     "Required for RS256. If empty, derived from private key.",
     )
 
-    # Ollama Settings
+    # LLM Settings (supports Ollama and OpenAI-compatible providers like Groq/OpenRouter)
+    LLM_PROVIDER: str = Field(
+        default="ollama",
+        description="LLM provider: 'ollama' or 'openai' (compatible with Groq, OpenRouter, OpenAI, vLLM)."
+    )
+    OPENAI_API_KEY: str = Field(
+        default="",
+        description="API key for OpenAI-compatible providers (e.g. Groq, OpenRouter, OpenAI)."
+    )
+    OPENAI_BASE_URL: str = Field(
+        default="",
+        description="Custom base URL for OpenAI-compatible API (e.g. https://api.groq.com/openai/v1)."
+    )
     OLLAMA_HOST: str = Field(default="http://localhost:11434")
     MODEL_NAME: str = Field(default="llama3.2:1b")
     SMALL_MODEL_NAME: str = Field(default="llama3.2:1b")
     EMBEDDING_MODEL: str = Field(default="nomic-embed-text")
+    LLM_TIMEOUT: int = Field(default=30, description="Hard timeout for LLM calls in seconds.")
 
     # Vector Store Settings
     CHROMA_HOST: str = Field(default="localhost")
@@ -48,7 +62,22 @@ class Settings(BaseSettings):
         description="Allow ChromaDB reset API. Set to true only in development."
     )
 
-    # Redis Settings
+    # CORS Settings
+    CORS_ORIGINS: list[str] = Field(
+        default=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],
+        description="Allowed CORS origins for API requests."
+    )
+
+    # Redis Settings (supports host/port or single REDIS_URL connection string)
+    REDIS_URL: str = Field(
+        default="",
+        description="Complete Redis URI (e.g. rediss://default:pwd@host:6379). Overrides REDIS_HOST/PORT if set."
+    )
     REDIS_HOST: str = Field(default="localhost")
     REDIS_PORT: int = Field(default=6379)
     REDIS_PASSWORD: str = Field(
@@ -188,6 +217,40 @@ class Settings(BaseSettings):
         default="self-healing-rag",
         description="LangSmith project name for run grouping."
     )
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def assemble_db_url(cls, v: Any) -> str:
+        if isinstance(v, str) and v.strip():
+            s = v.strip()
+            if s.startswith("postgres://"):
+                return s.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif s.startswith("postgresql://") and not s.startswith("postgresql+"):
+                return s.replace("postgresql://", "postgresql+asyncpg://", 1)
+            return s
+        return v
+
+    @field_validator("LANGGRAPH_CHECKPOINT_URI", mode="before")
+    @classmethod
+    def assemble_checkpoint_uri(cls, v: Any) -> str:
+        if isinstance(v, str) and v.strip():
+            s = v.strip()
+            if s.startswith("postgresql+psycopg://"):
+                return s.replace("postgresql+psycopg://", "postgresql://", 1)
+            elif s.startswith("postgres://"):
+                return s.replace("postgres://", "postgresql://", 1)
+            return s
+        return v
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> Any:
+        if isinstance(v, str) and v.strip():
+            s = v.strip()
+            if s == "*":
+                return ["*"]
+            return [x.strip() for x in s.split(",") if x.strip()]
+        return v
 
     def with_overrides(self, **kwargs) -> "Settings":
         """Return a copy of Settings with specified fields overridden without mutating global settings."""

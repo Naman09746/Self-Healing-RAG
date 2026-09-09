@@ -150,6 +150,7 @@ class RAGState(BaseModel):
     retrieved_chunks: Annotated[BoundedList[RetrievedChunk], operator.add] = Field(
         default_factory=lambda: BoundedList[RetrievedChunk](maxlen=RETRIEVED_CHUNKS_MAXLEN)
     )
+    no_relevant_chunks: bool = False
     generation_result: Optional[GenerationResult] = None
 
     # Control flow

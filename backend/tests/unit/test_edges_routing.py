@@ -10,8 +10,8 @@ Tests cover:
 """
 
 import pytest
-from backend.graph.state import RAGState, GenerationResult
-from backend.graph.edges import should_heal
+from backend.graph.state import RAGState, GenerationResult, RetrievedChunk
+from backend.graph.edges import should_heal, should_generate
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -190,3 +190,31 @@ class TestHappyPath:
             healing_target="",
         )
         assert should_heal(state) == "output"
+
+
+class TestShouldGenerate:
+    """Phase 1A: Knowledge-absence fast-fail routing."""
+
+    def test_fast_fail_flag_routes_to_output(self):
+        state = _state(no_relevant_chunks=True)
+        assert should_generate(state) == "output"
+
+    def test_empty_chunks_routes_to_output(self):
+        state = _state(retrieved_chunks=[], no_relevant_chunks=False)
+        assert should_generate(state) == "output"
+
+    def test_all_chunks_below_threshold_routes_to_output(self):
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="low score 1", score=0.2, source="doc1"),
+            RetrievedChunk(chunk_id="2", content="low score 2", score=0.4, source="doc2"),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        assert should_generate(state) == "output"
+
+    def test_relevant_chunks_routes_to_generation(self):
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="low score 1", score=0.2, source="doc1"),
+            RetrievedChunk(chunk_id="2", content="high score 2", score=0.85, source="doc2"),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        assert should_generate(state) == "generation"

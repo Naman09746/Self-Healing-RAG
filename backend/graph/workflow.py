@@ -10,7 +10,7 @@ from backend.graph.nodes import (
     create_evaluation_node,
     create_output_node,
 )
-from backend.graph.edges import should_heal
+from backend.graph.edges import should_heal, should_generate
 
 
 def create_rag_graph(deps, checkpointer=None):
@@ -46,7 +46,16 @@ def create_rag_graph(deps, checkpointer=None):
     # Add Edges
     workflow.add_edge("intake", "planning")
     workflow.add_edge("planning", "retrieval")
-    workflow.add_edge("retrieval", "generation")
+
+    # Fast-fail conditional edge: skip generation/critic if knowledge is absent
+    workflow.add_conditional_edges(
+        "retrieval",
+        should_generate,
+        {
+            "generation": "generation",
+            "output": "output",
+        },
+    )
     workflow.add_edge("generation", "critic")
 
     # Conditional Edge from Critic — Phase 3B: 4-way routing

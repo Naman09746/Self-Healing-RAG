@@ -52,10 +52,16 @@ export interface UserProfile {
   user_uuid: string;
 }
 
+export interface ServiceHealth {
+  status: "healthy" | "degraded" | "unhealthy" | "uninitialized" | "disabled_or_unavailable";
+  latency_ms?: number;
+  error?: string;
+}
+
 export interface HealthStatus {
   status: string;
   version: string;
-  services: Record<string, string>;
+  services: Record<string, ServiceHealth | string>;
 }
 
 export interface QueryRequest {
@@ -75,13 +81,17 @@ export interface RetrievedChunk {
 export interface QueryResponse {
   answer: string;
   session_id: string;
-  phase_timings: Record<string, number>;
-  sources: RetrievedChunk[];
+  query?: string;
+  phase_timings?: Record<string, number>;
+  sources?: RetrievedChunk[];
+  chunks_retrieved?: number;
+  status?: string;
   grounding_score: number;
-  is_hallucinated: boolean;
-  healing_actions: string[];
-  verification_mode: string;
-  complexity_score: number;
+  is_hallucinated?: boolean;
+  healing_actions?: string[];
+  verification_mode?: string;
+  complexity_score?: number;
+  retry_count?: number;
 }
 
 export interface DocumentInfo {
@@ -110,7 +120,11 @@ export interface MetricsSnapshot {
   avg_latency_ms: number;
   cache_hit_rate: number;
   active_queries: number;
+  grounding_trend?: number[];
+  latency_trend?: number[];
+  phase_breakdown_ms?: Record<string, number>;
 }
+
 
 export interface EvaluationResult {
   faithfulness: number;
@@ -376,4 +390,6 @@ export const experiments = {
   list: () => request<ExperimentCampaign[]>("GET", "/experiments/campaigns"),
   get: (id: string) => request<ExperimentCampaign>("GET", `/experiments/campaigns/${id}`),
   report: (id: string) => request<string>("GET", `/experiments/campaigns/${id}/report`),
+  start: (req?: { name?: string; strategy?: string; max_trials?: number; p95_sla?: number; dataset_version?: string }) =>
+    request<{ status: string; campaign_id?: string }>("POST", "/experiments/campaigns", req || {}),
 };

@@ -50,13 +50,26 @@ class HybridRetriever:
             sparse_results: List[Dict[str, Any]]
             graph_results: List[str]
 
+            async def _safe_graph_retrieve() -> List[str]:
+                try:
+                    return await asyncio.wait_for(
+                        asyncio.to_thread(self._retrieve_from_graph, query),
+                        timeout=3.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Graph retrieval timed out after 3.0s, proceeding with vector/sparse results", query=query[:60])
+                    return []
+                except Exception as e:
+                    logger.warning("Graph retrieval failed, continuing without graph", error=str(e))
+                    return []
+
             with tracer.start_as_current_span("vector_search") as vs_span:
                 vs_span.set_attribute("engine", "chroma")
                 vs_span.set_attribute("n_results", k * 2)
                 chroma_raw, sparse_results, graph_results = await asyncio.gather(
                     asyncio.to_thread(self.chroma.query, query, n_results=k*2, tenant_id=tid),
                     asyncio.to_thread(self.bm25.retrieve, query, k=k*2),
-                    asyncio.to_thread(self._retrieve_from_graph, query)
+                    _safe_graph_retrieve(),
                 )
                 vs_span.set_attribute("result_count", len(chroma_raw.get("documents", [[]])[0]) if chroma_raw.get("documents") else 0)
 

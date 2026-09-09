@@ -25,6 +25,35 @@ Route = Literal[
     "aggressive_rewrite",
 ]
 
+GenerateRoute = Literal["generation", "output"]
+
+
+def should_generate(state: RAGState) -> GenerateRoute:
+    """Determine whether to proceed to generation or fast-fail to output.
+
+    Fast-fail path (Decision 1A):
+    If no relevant chunks exist in the knowledge base (e.g. empty or all scores
+    below RELEVANCE_THRESHOLD), bypass generation, critic, and healing entirely.
+    """
+    if getattr(state, "no_relevant_chunks", False):
+        logger.info("Fast-fail: no_relevant_chunks flag set → output")
+        return "output"
+
+    chunks = getattr(state, "retrieved_chunks", None)
+    if not chunks:
+        logger.info("Fast-fail: no retrieved chunks → output")
+        return "output"
+
+    chunk_list = chunks.to_list() if hasattr(chunks, "to_list") else list(chunks)
+    if all(getattr(c, "score", 0.0) < settings.RELEVANCE_THRESHOLD for c in chunk_list):
+        logger.info(
+            "Fast-fail: all chunk scores below relevance threshold → output",
+            threshold=settings.RELEVANCE_THRESHOLD,
+        )
+        return "output"
+
+    return "generation"
+
 
 def should_heal(state: RAGState) -> Route:
     """Determine routing based on per-claim verdicts (Phase 3B).

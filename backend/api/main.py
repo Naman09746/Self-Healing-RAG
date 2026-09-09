@@ -1,5 +1,7 @@
+import asyncio
+import time
 import psycopg
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres import PostgresSaver
 from backend.core.config import settings
@@ -53,17 +55,31 @@ async def lifespan(app: FastAPI):
     # 2. Initialize DB tables
     from backend.storage.db.session import init_db
 
-    await init_db()
+    try:
+        await init_db()
+    except Exception as e:
+        logger.warning("Database init_db warning on startup (will retry on requests)", error=str(e))
 
     # 3. Store the container in app.state for route access.
     app.state.svc = svc
 
     # 4. Initialize PostgresSaver for stateful graph execution (Phase 4A).
     #    setup() runs DDL migrations to create checkpoint tables if not present.
-    checkpointer = PostgresSaver(
-        conn=psycopg.connect(settings.LANGGRAPH_CHECKPOINT_URI)
-    )
-    checkpointer.setup()
+    checkpointer = None
+    if getattr(settings, "LANGGRAPH_CHECKPOINT_URI", None):
+        try:
+            conn = psycopg.connect(settings.LANGGRAPH_CHECKPOINT_URI)
+            checkpointer = PostgresSaver(conn=conn)
+            checkpointer.setup()
+            logger.info("PostgresCheckpointer setup completed")
+        except Exception as e:
+            logger.warning("Could not connect PostgresSaver, falling back to MemorySaver", error=str(e))
+            from langgraph.checkpoint.memory import MemorySaver
+            checkpointer = MemorySaver()
+    else:
+        from langgraph.checkpoint.memory import MemorySaver
+        checkpointer = MemorySaver()
+
     app.state.checkpointer = checkpointer
 
     # 5. Build the compiled LangGraph using the initialized container.
@@ -104,19 +120,19 @@ app.add_middleware(AuditMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(ConcurrencyControlMiddleware)
 
-# Configure CORS for local development and potential dashboard
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Configure CORS for local development and cloud deployments (Vercel, Render)
+cors_kwargs = {
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+if "*" in settings.CORS_ORIGINS:
+    cors_kwargs["allow_origin_regex"] = r"^https?://.*"
+    cors_kwargs["allow_credentials"] = True
+else:
+    cors_kwargs["allow_origins"] = settings.CORS_ORIGINS
+    cors_kwargs["allow_credentials"] = True
+
+app.add_middleware(CORSMiddleware, **cors_kwargs)
 
 
 app.include_router(auth.router, prefix=settings.API_V1_STR)
@@ -129,30 +145,86 @@ app.include_router(websocket.router, tags=["WebSocket"])
 
 @app.get("/health")
 @app.get(f"{settings.API_V1_STR}/health")
-async def health_check():
-    """Health check endpoint."""
+async def health_check(request: Request):
+    """Component health check probing Chroma, Redis, Postgres, Neo4j, and Ollama."""
+    services: dict[str, Any] = {}
+    svc_container = getattr(request.app.state, "svc", None)
+
+    # 1. ChromaDB
+    t0 = time.time()
+    try:
+        if svc_container and svc_container.store and hasattr(svc_container.store, "client"):
+            svc_container.store.client.heartbeat()
+            services["chroma"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
+        else:
+            services["chroma"] = {"status": "uninitialized"}
+    except Exception as e:
+        services["chroma"] = {"status": "unhealthy", "error": str(e)}
+
+    # 2. Redis
+    t0 = time.time()
+    try:
+        if svc_container and svc_container.session_memory and hasattr(svc_container.session_memory, "redis"):
+            await asyncio.wait_for(svc_container.session_memory.redis.ping(), timeout=2.0)
+            services["redis"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
+        else:
+            services["redis"] = {"status": "uninitialized"}
+    except Exception as e:
+        services["redis"] = {"status": "unhealthy", "error": str(e)}
+
+    # 3. PostgreSQL
+    t0 = time.time()
+    try:
+        from backend.storage.db.session import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as session:
+            await asyncio.wait_for(session.execute(text("SELECT 1")), timeout=2.0)
+        services["postgres"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
+    except Exception as e:
+        services["postgres"] = {"status": "unhealthy", "error": str(e)}
+
+    # 4. Neo4j
+    t0 = time.time()
+    try:
+        if (
+            svc_container
+            and svc_container.hybrid_retriever
+            and svc_container.hybrid_retriever.graph
+            and getattr(svc_container.hybrid_retriever.graph, "_driver", None)
+        ):
+            await asyncio.wait_for(
+                asyncio.to_thread(svc_container.hybrid_retriever.graph._driver.verify_connectivity),
+                timeout=2.0,
+            )
+            services["neo4j"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
+        else:
+            services["neo4j"] = {"status": "disabled_or_unavailable"}
+    except Exception as e:
+        services["neo4j"] = {"status": "unhealthy", "error": str(e)}
+
+    # 5. Ollama
+    t0 = time.time()
+    try:
+        import ollama
+        client = ollama.AsyncClient(host=settings.OLLAMA_HOST)
+        await asyncio.wait_for(client.list(), timeout=2.0)
+        services["ollama"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
+    except Exception as e:
+        services["ollama"] = {"status": "unhealthy", "error": str(e)}
+
     return {
         "status": "healthy",
         "version": "0.1.0",
-        "services": {
-            "ollama": settings.OLLAMA_HOST,
-            "chroma": f"{settings.CHROMA_HOST}:{settings.CHROMA_PORT}",
-        },
+        "services": services,
     }
 
 
 @app.get(f"{settings.API_V1_STR}/metrics/snapshot")
 async def metrics_snapshot():
     """Live metrics snapshot for frontend dashboard and system ribbons."""
-    return {
-        "queries_total": 142,
-        "hallucinations_total": 4,
-        "healings_total": 7,
-        "avg_grounding_score": 0.94,
-        "avg_latency_ms": 340.5,
-        "cache_hit_rate": 0.42,
-        "active_queries": 0,
-    }
+    from backend.core.metrics import metrics
+    return metrics.get_snapshot()
+
 
 
 @app.get("/")

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Activity } from "lucide-react";
+import { health } from "@/lib/api";
 
 interface Service {
   id: string;
@@ -10,17 +11,49 @@ interface Service {
   latency: number;
 }
 
+const SERVICE_LABELS: Record<string, string> = {
+  chroma: "ChromaDB",
+  redis: "Redis",
+  postgres: "PostgreSQL",
+  neo4j: "Neo4j",
+  ollama: "Ollama",
+};
+
 export default function SystemStatus() {
   const [services, setServices] = useState<Service[]>([
-    { id: "api", label: "API", status: "unknown", latency: 0 },
+    { id: "chroma", label: "ChromaDB", status: "unknown", latency: 0 },
+    { id: "redis", label: "Redis", status: "unknown", latency: 0 },
+    { id: "postgres", label: "PostgreSQL", status: "unknown", latency: 0 },
+    { id: "neo4j", label: "Neo4j", status: "unknown", latency: 0 },
+    { id: "ollama", label: "Ollama", status: "unknown", latency: 0 },
   ]);
   const [loading, setLoading] = useState(true);
 
   const checkHealth = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:8000/health", { signal: AbortSignal.timeout(5000) });
-      if (res.ok) {
-        setServices([{ id: "api", label: "API", status: "healthy", latency: 0 }]);
+      const data = await health.check();
+      if (data && data.services) {
+        const parsed: Service[] = Object.entries(data.services).map(([key, val]) => {
+          const label = SERVICE_LABELS[key] || key.toUpperCase();
+          let status: "healthy" | "degraded" | "down" | "unknown" = "unknown";
+          let latency = 0;
+
+          if (typeof val === "object" && val !== null) {
+            const rawStatus = (val as any).status;
+            if (rawStatus === "healthy") status = "healthy";
+            else if (rawStatus === "unhealthy") status = "down";
+            else if (rawStatus === "degraded" || rawStatus === "disabled_or_unavailable") status = "degraded";
+            latency = (val as any).latency_ms || 0;
+          } else if (typeof val === "string") {
+            status = "healthy";
+          }
+
+          return { id: key, label, status, latency };
+        });
+
+        if (parsed.length > 0) {
+          setServices(parsed);
+        }
       }
     } catch {
       setServices([{ id: "api", label: "API", status: "down", latency: 0 }]);

@@ -364,102 +364,99 @@ function DocsSidebar({
   return (
     <>
       {/* Desktop */}
-      <aside
-        className="hidden md:block w-[260px] shrink-0 h-screen sticky top-0 overflow-y-auto"
-        style={{
-          borderRight: "1px solid rgba(255,255,255,0.04)",
-          background: "rgba(10,10,15,0.95)",
-        }}
-      >
-        <div className="p-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+      <aside className="hidden md:block w-[260px] shrink-0 h-screen sticky top-0 overflow-y-auto bg-white border-r border-slate-200/90">
+        <div className="p-4 border-b border-slate-200/80">
           <a href="/" className="flex items-center gap-2.5 group">
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all group-hover:shadow-lg"
-              style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-            >
-              <BookOpen size={13} className="text-white" />
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center transition-all shadow-xs group-hover:scale-105">
+              <BookOpen size={15} className="text-white" />
             </div>
-            <span className="text-xs font-semibold" style={{ color: "#e8e8ed" }}>Documentation</span>
+            <div>
+              <div className="text-xs font-bold text-slate-900">Self-Healing RAG</div>
+              <div className="text-[10px] text-slate-400 font-medium">Platform Docs</div>
+            </div>
           </a>
         </div>
         <nav className="p-3 space-y-4">
           {NAV_SECTIONS.map((section) => (
             <div key={section.title}>
-              <p className="text-[9px] font-semibold uppercase tracking-widest px-2 mb-1.5" style={{ color: "#525266" }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2.5 mb-1.5">
                 {section.title}
               </p>
               <div className="space-y-0.5">
-                {section.items.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      onSectionChange(item.id);
-                      onMobileClose();
-                    }}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[11px] transition-all text-left ${
-                      activeSection === item.id
-                        ? "bg-indigo-500/10 text-indigo-300"
-                        : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
-                    }`}
-                  >
-                    <item.icon size={13} className="shrink-0" />
-                    {item.label}
-                  </button>
-                ))}
+                {section.items.map((item) => {
+                  const isActive = activeSection === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        onSectionChange(item.id);
+                        onMobileClose();
+                      }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-left ${
+                        isActive
+                          ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/60"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                      }`}
+                    >
+                      <item.icon
+                        size={14}
+                        className={`shrink-0 ${isActive ? "text-blue-600" : "text-slate-400"}`}
+                      />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ))}
         </nav>
       </aside>
 
-      {/* Mobile */}
+      {/* Mobile Drawer */}
       {mobileOpen && (
-        <div
-          className="fixed inset-0 z-50 md:hidden"
-          style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
-        >
-          <aside
-            className="w-[280px] h-full overflow-y-auto"
-            style={{
-              background: "rgba(10,10,15,0.98)",
-              borderRight: "1px solid rgba(255,255,255,0.04)",
-            }}
-          >
-            <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+        <div className="fixed inset-0 z-50 md:hidden bg-slate-900/40 backdrop-blur-xs">
+          <aside className="w-[280px] h-full overflow-y-auto bg-white border-r border-slate-200">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
-                  <BookOpen size={13} className="text-white" />
+                <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+                  <BookOpen size={14} />
                 </div>
-                <span className="text-xs font-semibold" style={{ color: "#e8e8ed" }}>Documentation</span>
+                <span className="text-xs font-bold text-slate-900">Documentation</span>
               </div>
-              <button onClick={onMobileClose} className="p-1 rounded-lg hover:bg-white/5" style={{ color: "#525266" }}>
+              <button onClick={onMobileClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-700">
                 <X size={16} />
               </button>
             </div>
             <nav className="p-3 space-y-4">
               {NAV_SECTIONS.map((section) => (
                 <div key={section.title}>
-                  <p className="text-[9px] font-semibold uppercase tracking-widest px-2 mb-1.5" style={{ color: "#525266" }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2.5 mb-1.5">
                     {section.title}
                   </p>
                   <div className="space-y-0.5">
-                    {section.items.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          onSectionChange(item.id);
-                          onMobileClose();
-                        }}
-                        className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[11px] transition-all text-left ${
-                          activeSection === item.id
-                            ? "bg-indigo-500/10 text-indigo-300"
-                            : "text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
-                        }`}
-                      >
-                        <item.icon size={13} className="shrink-0" />
-                        {item.label}
-                      </button>
-                    ))}
+                    {section.items.map((item) => {
+                      const isActive = activeSection === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            onSectionChange(item.id);
+                            onMobileClose();
+                          }}
+                          className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all text-left ${
+                            isActive
+                              ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/60"
+                              : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                          }`}
+                        >
+                          <item.icon
+                            size={14}
+                            className={`shrink-0 ${isActive ? "text-blue-600" : "text-slate-400"}`}
+                          />
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -471,7 +468,7 @@ function DocsSidebar({
   );
 }
 
-/* ─── Code Block ──────────────────────────────────────── */
+/* ─── Code Block with Copy ────────────────────────────── */
 function CodeBlock({ code, language = "bash" }: { code: string; language?: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -482,18 +479,11 @@ function CodeBlock({ code, language = "bash" }: { code: string; language?: strin
   };
 
   return (
-    <div
-      className="rounded-xl overflow-hidden my-6"
-      style={{ border: "1px solid rgba(255,255,255,0.06)" }}
-    >
-      <div
-        className="flex items-center justify-between px-4 py-2"
-        style={{ background: "rgba(255,255,255,0.03)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}
-      >
-        <span className="text-[10px] font-mono" style={{ color: "#525266" }}>{language}</span>
+    <div className="rounded-xl overflow-hidden my-5 border border-slate-800 bg-slate-950 shadow-md">
+      <div className="flex items-center justify-between px-4 py-2 bg-slate-900/80 border-b border-slate-800">
+        <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">{language}</span>
         <button
           onClick={handleCopy}
-          className="text-[10px] flex items-center gap-1.5 px-2 py-1 rounded-md transition-all hover:bg-white/5"
           style={{ color: copied ? "#22c55e" : "#8b8b9e" }}
         >
           {copied ? "Copied!" : "Copy"}
@@ -639,10 +629,10 @@ function ContentSection({ sectionId }: { sectionId: string }) {
                       const clean = item.replace(/^•\s*/, "").trim();
                       const parts = clean.split(/—\s*/);
                       return (
-                        <li key={j} className="flex items-start gap-2 text-xs" style={{ color: "#8b8b9e" }}>
-                          <span className="mt-[6px] w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#525266" }} />
+                        <li key={j} className="flex items-start gap-2 text-xs text-slate-600">
+                          <span className="mt-[6px] w-1.5 h-1.5 rounded-full shrink-0 bg-slate-400" />
                           <span>
-                            {parts[0] && <strong className="font-mono" style={{ color: "#a5b4fc" }}>{parts[0]}</strong>}
+                            {parts[0] && <strong className="font-mono text-indigo-600">{parts[0]}</strong>}
                             {parts[1] && <span> — {parts[1]}</span>}
                           </span>
                         </li>
@@ -662,23 +652,23 @@ function ContentSection({ sectionId }: { sectionId: string }) {
                   if (match) {
                     return (
                       <div key={j} className="flex items-start gap-3">
-                        <span className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5" style={{ background: "rgba(99,102,241,0.1)", color: "#a5b4fc" }}>
+                        <span className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5 bg-blue-50 text-blue-700 border border-blue-200/60">
                           {match[1].split(".")[0]}
                         </span>
                         <div>
-                          <strong className="text-xs" style={{ color: "#e8e8ed" }}>{match[1].replace(/^\d+\.\s*/, "")}</strong>
-                          <span className="text-xs"> — {match[2]}</span>
+                          <strong className="text-xs text-slate-900">{match[1].replace(/^\d+\.\s*/, "")}</strong>
+                          <span className="text-xs text-slate-600"> — {match[2]}</span>
                         </div>
                       </div>
                     );
                   }
-                  return <p key={j} className="text-xs">{line}</p>;
+                  return <p key={j} className="text-xs text-slate-700">{line}</p>;
                 })}
               </div>
             );
           }
 
-          return <p key={i}>{paragraph}</p>;
+          return <p key={i} className="text-slate-700 leading-relaxed">{paragraph}</p>;
         })}
       </div>
 
@@ -702,33 +692,24 @@ export default function DocsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen" style={{ background: "#0a0a0f" }}>
+    <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-blue-100">
       {/* Mobile Top Bar */}
-      <div
-        className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 h-14"
-        style={{
-          background: "rgba(10,10,15,0.95)",
-          borderBottom: "1px solid rgba(255,255,255,0.04)",
-          backdropFilter: "blur(20px)",
-        }}
-      >
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 h-14 bg-white/95 border-b border-slate-200 backdrop-blur-md">
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => setMobileNavOpen(true)}
-            className="p-1.5 rounded-lg hover:bg-white/5"
-            style={{ color: "#8b8b9e" }}
+            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
           >
             <MenuIcon size={18} />
           </button>
-          <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
-            <BookOpen size={11} className="text-white" />
+          <div className="w-6 h-6 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+            <BookOpen size={11} />
           </div>
-          <span className="text-xs font-semibold" style={{ color: "#e8e8ed" }}>Documentation</span>
+          <span className="text-xs font-bold text-slate-900">Documentation</span>
         </div>
         <a
           href="/"
-          className="text-[10px] flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-all"
-          style={{ color: "#8b8b9e", background: "rgba(255,255,255,0.03)" }}
+          className="text-xs flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 bg-slate-100 transition-colors"
         >
           Home
         </a>
@@ -746,12 +727,12 @@ export default function DocsPage() {
         <main className="flex-1 min-h-screen">
           <div className="max-w-4xl mx-auto px-5 md:px-12 py-8 md:py-16">
             {/* Breadcrumb */}
-            <div className="flex items-center gap-1.5 text-[10px] mb-8" style={{ color: "#525266" }}>
-              <a href="/" className="hover:text-indigo-400 transition-colors">Home</a>
-              <ChevronRight size={10} />
-              <span style={{ color: "#8b8b9e" }}>Documentation</span>
-              <ChevronRight size={10} />
-              <span style={{ color: "#a5b4fc" }}>{SECTION_CONTENT[activeSection]?.title}</span>
+            <div className="flex items-center gap-1.5 text-xs mb-6 text-slate-400">
+              <a href="/" className="hover:text-blue-600 transition-colors">Home</a>
+              <ChevronRight size={11} />
+              <a href="/dashboard" className="hover:text-blue-600 transition-colors">Dashboard</a>
+              <ChevronRight size={11} />
+              <span className="text-blue-600 font-medium">{SECTION_CONTENT[activeSection]?.title}</span>
             </div>
 
             <ContentSection sectionId={activeSection} />

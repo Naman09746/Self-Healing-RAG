@@ -11,6 +11,7 @@ import {
   query as queryApi,
   documents as docsApi,
   metrics as metricsApi,
+  experiments as experimentsApi,
   auth as authApi,
   isAuthenticated,
   getAccessToken,
@@ -21,6 +22,8 @@ import {
   type HealthStatus,
   type MetricsSnapshot,
   type UserProfile,
+  type ExperimentCampaign,
+  type ExperimentTrial,
 } from "./api";
 
 // ─── Health Check ─────────────────────────────────────────
@@ -177,24 +180,66 @@ export function useMetrics(pollInterval = 15000) {
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetch = async () => {
-      try {
-        const result = await metricsApi.snapshot();
-        setMetrics(result);
-      } catch {
-        // Silently handle — metrics endpoint may not be available
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetch = useCallback(async () => {
+    try {
+      const result = await metricsApi.snapshot();
+      setMetrics(result);
+    } catch {
+      // Silently handle — metrics endpoint may not be available
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
+  useEffect(() => {
     fetch();
     const interval = setInterval(fetch, pollInterval);
     return () => clearInterval(interval);
-  }, [pollInterval]);
+  }, [fetch, pollInterval]);
 
-  return { metrics, loading };
+  return { metrics, loading, refresh: fetch };
+}
+
+// ─── Experiments (AES) ────────────────────────────────────
+
+export function useExperiments(pollInterval = 30000) {
+  const [campaigns, setCampaigns] = useState<ExperimentCampaign[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchCampaigns = useCallback(async () => {
+    try {
+      const data = await experimentsApi.list();
+      setCampaigns(data || []);
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCampaigns();
+    const interval = setInterval(fetchCampaigns, pollInterval);
+    return () => clearInterval(interval);
+  }, [fetchCampaigns, pollInterval]);
+
+  const startCampaign = useCallback(
+    async (params?: { name?: string; strategy?: string; max_trials?: number; p95_sla?: number }) => {
+      try {
+        const res = await experimentsApi.start(params);
+        await fetchCampaigns();
+        return res;
+      } catch (err) {
+        setError((err as Error).message);
+        throw err;
+      }
+    },
+    [fetchCampaigns]
+  );
+
+  return { campaigns, loading, error, refresh: fetchCampaigns, startCampaign };
 }
 
 // ─── Auth ─────────────────────────────────────────────────
