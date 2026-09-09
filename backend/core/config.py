@@ -248,6 +248,16 @@ class Settings(BaseSettings):
             return s
         return ""
 
+    @field_validator("REDIS_URL", mode="before")
+    @classmethod
+    def assemble_redis_url(cls, v: Any) -> str:
+        if isinstance(v, str) and v.strip():
+            s = "".join(v.split())
+            if s.startswith("redis://") and "upstash.io" in s:
+                s = s.replace("redis://", "rediss://", 1)
+            return s
+        return ""
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Any) -> list[str]:
