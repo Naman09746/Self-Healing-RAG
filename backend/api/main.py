@@ -48,58 +48,58 @@ async def lifespan(app: FastAPI):
     setup_langsmith()
 
     # 1. Initialize service container (creates all agents, stores, memories).
-    #    This mutates the global ``svc`` singleton — safe because lifespan runs
-    #    exactly once per process.
     svc.init()
-
-    # 2. Initialize DB tables
-    from backend.storage.db.session import init_db
-
-    try:
-        await init_db()
-    except Exception as e:
-        logger.warning("Database init_db warning on startup (will retry on requests)", error=str(e))
-
-    # 3. Store the container in app.state for route access.
     app.state.svc = svc
 
-    # 4. Initialize PostgresSaver for stateful graph execution (Phase 4A).
-    #    setup() runs DDL migrations to create checkpoint tables if not present.
-    checkpointer = None
-    checkpoint_uri = settings.LANGGRAPH_CHECKPOINT_URI
-    if (
-        not checkpoint_uri
-        and settings.DATABASE_URL
-        and "localhost" not in settings.DATABASE_URL
-        and "127.0.0.1" not in settings.DATABASE_URL
-    ):
-        checkpoint_uri = (
-            settings.DATABASE_URL
-            .replace("postgresql+asyncpg://", "postgresql://", 1)
-            .replace("ssl=require", "sslmode=require")
-        )
-
-    if checkpoint_uri:
-        try:
-            conn = psycopg.connect(checkpoint_uri)
-            checkpointer = PostgresSaver(conn=conn)
-            checkpointer.setup()
-            logger.info("PostgresCheckpointer setup completed")
-        except Exception as e:
-            logger.warning("Could not connect PostgresSaver, falling back to MemorySaver", error=str(e))
-            from langgraph.checkpoint.memory import MemorySaver
-            checkpointer = MemorySaver()
-    else:
-        from langgraph.checkpoint.memory import MemorySaver
-        checkpointer = MemorySaver()
-
+    # 2. Fast checkpointer: default to MemorySaver immediately so the graph compiles in 0ms!
+    from langgraph.checkpoint.memory import MemorySaver
+    checkpointer = MemorySaver()
     app.state.checkpointer = checkpointer
-
-    # 5. Build the compiled LangGraph using the initialized container.
-    #    The graph is stateless and safe to share across all requests.
     app.state.rag_graph = create_rag_graph(svc, checkpointer=checkpointer)
+    logger.info("RAG graph compiled and ready (instant startup)")
 
-    logger.info("RAG graph compiled and ready (checkpointer=Phase 4A, tracing=Phase 4C)")
+    # 3. Background DB & Checkpointer upgrade task (does not block port binding!)
+    async def _background_init():
+        # DB tables
+        try:
+            from backend.storage.db.session import init_db
+            await asyncio.wait_for(init_db(), timeout=10.0)
+            logger.info("Database tables initialized successfully")
+        except Exception as e:
+            logger.warning("Database init_db warning (will retry on requests)", error=str(e))
+
+        # Postgres checkpointer upgrade (optional, non-blocking)
+        checkpoint_uri = settings.LANGGRAPH_CHECKPOINT_URI
+        if (
+            not checkpoint_uri
+            and settings.DATABASE_URL
+            and "localhost" not in settings.DATABASE_URL
+            and "127.0.0.1" not in settings.DATABASE_URL
+        ):
+            checkpoint_uri = (
+                settings.DATABASE_URL
+                .replace("postgresql+asyncpg://", "postgresql://", 1)
+                .replace("ssl=require", "sslmode=require")
+            )
+
+        if checkpoint_uri:
+            try:
+                def _setup_pg_saver():
+                    import psycopg
+                    from langgraph.checkpoint.postgres import PostgresSaver
+                    c = psycopg.connect(checkpoint_uri, connect_timeout=5)
+                    cp = PostgresSaver(conn=c)
+                    cp.setup()
+                    return cp
+
+                pg_saver = await asyncio.wait_for(asyncio.to_thread(_setup_pg_saver), timeout=8.0)
+                app.state.checkpointer = pg_saver
+                app.state.rag_graph = create_rag_graph(svc, checkpointer=pg_saver)
+                logger.info("Upgraded to PostgresCheckpointer in background")
+            except Exception as e:
+                logger.info("Proceeding with MemorySaver checkpointer", reason=str(e))
+
+    asyncio.create_task(_background_init())
 
     yield
 

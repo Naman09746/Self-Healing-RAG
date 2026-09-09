@@ -9,7 +9,13 @@ logger = get_logger(__name__)
 class MemoryAgent:
     def __init__(self, model: str = None):
         self.client = LLMClient(model=model)
-        self.memory_store = ChromaStore(collection_name="long_term_memory")
+        self._memory_store = None
+
+    @property
+    def memory_store(self):
+        if self._memory_store is None:
+            self._memory_store = ChromaStore(collection_name="long_term_memory")
+        return self._memory_store
 
     def store_insight(self, query: str, solution: str, metadata: dict = None):
         """Store a successful query-solution pair in long-term memory."""
