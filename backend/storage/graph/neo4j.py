@@ -6,19 +6,26 @@ logger = get_logger(__name__)
 
 class GraphStore:
     def __init__(self):
-        self.uri = "bolt://localhost:7687"
-        self.user = "neo4j"
-        self.password = "password"
+        self.uri = settings.NEO4J_URI
+        self.user = settings.NEO4J_USER
+        self.password = settings.NEO4J_PASSWORD
         self._driver = None
-        self.connect()
+        if getattr(settings, "NEO4J_ENABLED", False):
+            self.connect()
+        else:
+            logger.info("Neo4j graph store disabled; skipping connection")
         
     def connect(self):
         try:
-            self._driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+            self._driver = GraphDatabase.driver(
+                self.uri,
+                auth=(self.user, self.password),
+                connection_timeout=2.0,
+            )
             self._driver.verify_connectivity()
             logger.info("Connected to Neo4j successfully")
         except Exception as e:
-            logger.error(f"Failed to connect to Neo4j: {str(e)}")
+            logger.warning(f"Neo4j connection skipped: {str(e)}")
             self._driver = None
 
     def close(self):

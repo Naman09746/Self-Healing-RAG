@@ -199,7 +199,7 @@ async function request<T>(
   }
 
   const controller = new AbortController();
-  const timeout = opts?.timeout || 30000;
+  const timeout = opts?.timeout || 60000;
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {

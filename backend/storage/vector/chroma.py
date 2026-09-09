@@ -24,17 +24,22 @@ class ChromaStore:
     """
 
     def __init__(self, collection_name: str = None):
-        try:
-            logger.info("Connecting to ChromaDB Server", host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
-            self.client = chromadb.HttpClient(
-                host=settings.CHROMA_HOST,
-                port=settings.CHROMA_PORT,
-                settings=ChromaSettings(allow_reset=settings.CHROMA_ALLOW_RESET)
-            )
-            self.client.heartbeat()
-        except Exception as e:
-            logger.warning("Could not connect to ChromaDB Server, falling back to local storage", error=str(e))
+        use_local = getattr(settings, "CHROMA_USE_LOCAL", True) or settings.CHROMA_HOST in ("localhost", "127.0.0.1")
+        if use_local:
+            logger.info("Using embedded ChromaDB persistent storage at ./chroma_data")
             self.client = chromadb.PersistentClient(path="./chroma_data")
+        else:
+            try:
+                logger.info("Connecting to ChromaDB Server", host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
+                self.client = chromadb.HttpClient(
+                    host=settings.CHROMA_HOST,
+                    port=settings.CHROMA_PORT,
+                    settings=ChromaSettings(allow_reset=settings.CHROMA_ALLOW_RESET)
+                )
+                self.client.heartbeat()
+            except Exception as e:
+                logger.warning("Could not connect to ChromaDB Server, falling back to local storage", error=str(e))
+                self.client = chromadb.PersistentClient(path="./chroma_data")
 
         try:
             from chromadb.utils import embedding_functions

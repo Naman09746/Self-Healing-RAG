@@ -62,6 +62,19 @@ class Settings(BaseSettings):
         default=False,
         description="Allow ChromaDB reset API. Set to true only in development."
     )
+    CHROMA_USE_LOCAL: bool = Field(
+        default=True,
+        description="Use local embedded ChromaDB storage without attempting network connection to localhost:8000."
+    )
+
+    # Neo4j Graph Settings
+    NEO4J_ENABLED: bool = Field(
+        default=False,
+        description="Enable Neo4j knowledge graph integration. Disabled by default in cloud free deployments."
+    )
+    NEO4J_URI: str = Field(default="bolt://localhost:7687")
+    NEO4J_USER: str = Field(default="neo4j")
+    NEO4J_PASSWORD: str = Field(default="password")
 
     # CORS Settings
     CORS_ORIGINS: Union[list[str], str] = Field(
@@ -226,6 +239,9 @@ class Settings(BaseSettings):
     def assemble_db_url(cls, v: Any) -> str:
         if isinstance(v, str) and v.strip():
             s = v.strip()
+            # Auto-heal Neon typo if user combined -pooler with .c- region (which breaks DNS)
+            if "-pooler.c-" in s:
+                s = s.replace("-pooler.c-", ".c-")
             if s.startswith("postgres://"):
                 s = s.replace("postgres://", "postgresql+asyncpg://", 1)
             elif s.startswith("postgresql://") and not s.startswith("postgresql+"):
@@ -255,6 +271,8 @@ class Settings(BaseSettings):
     def assemble_checkpoint_uri(cls, v: Any) -> str:
         if isinstance(v, str) and v.strip():
             s = v.strip()
+            if "-pooler.c-" in s:
+                s = s.replace("-pooler.c-", ".c-")
             if s.startswith("postgresql+psycopg://"):
                 return s.replace("postgresql+psycopg://", "postgresql://", 1)
             elif s.startswith("postgres://"):
