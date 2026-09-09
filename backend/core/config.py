@@ -230,9 +230,23 @@ class Settings(BaseSettings):
                 s = s.replace("postgres://", "postgresql+asyncpg://", 1)
             elif s.startswith("postgresql://") and not s.startswith("postgresql+"):
                 s = s.replace("postgresql://", "postgresql+asyncpg://", 1)
-            # asyncpg accepts 'ssl=require', but rejects 'sslmode=require'
-            if "sslmode=" in s:
-                s = s.replace("sslmode=", "ssl=")
+            
+            try:
+                from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+                p = urlparse(s)
+                if p.query:
+                    qs = parse_qs(p.query)
+                    if "sslmode" in qs:
+                        mode = qs.pop("sslmode")[0]
+                        qs["ssl"] = [mode]
+                    qs.pop("channel_binding", None)
+                    qs.pop("target_session_attrs", None)
+                    new_query = urlencode(qs, doseq=True)
+                    s = urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
+            except Exception:
+                if "sslmode=" in s:
+                    s = s.replace("sslmode=", "ssl=")
+
             return s
         return v
 
