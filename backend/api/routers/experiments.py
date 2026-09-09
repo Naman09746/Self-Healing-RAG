@@ -12,7 +12,6 @@ from backend.experiments.models import (
     ObjectiveConfig,
     StrategyType,
 )
-from backend.experiments.orchestrator import ExperimentOrchestrator
 from backend.experiments.scientist.retrospective import RetrospectiveGenerator
 from backend.experiments.store import JSONExperimentStore
 
@@ -20,7 +19,15 @@ router = APIRouter(prefix="/experiments", tags=["experiments"])
 logger = get_logger(__name__)
 
 store = JSONExperimentStore()
-orchestrator = ExperimentOrchestrator(store=store)
+_orchestrator = None
+
+
+def get_orchestrator():
+    global _orchestrator
+    if _orchestrator is None:
+        from backend.experiments.orchestrator import ExperimentOrchestrator
+        _orchestrator = ExperimentOrchestrator(store=store)
+    return _orchestrator
 
 
 class StartCampaignRequest(BaseModel):
@@ -112,7 +119,8 @@ async def start_campaign(
 
     async def _run_bg():
         try:
-            await orchestrator.run_campaign(
+            orch = get_orchestrator()
+            await orch.run_campaign(
                 name=req.name,
                 dataset=dataset,
                 strategy=strat_enum,

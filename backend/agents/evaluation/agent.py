@@ -60,7 +60,15 @@ class RAGASEvaluator:
 
     def __init__(self, llm_config: Optional[dict] = None) -> None:
         self._llm_config = llm_config or {}
-        self._ragas_available = False
+        self._ragas_loaded: Optional[bool] = None
+        self._evaluate = None
+        self._faithfulness = None
+        self._answer_relevancy = None
+        self._context_precision = None
+
+    def _ensure_ragas_loaded(self) -> bool:
+        if self._ragas_loaded is not None:
+            return self._ragas_loaded
 
         try:
             from ragas import evaluate
@@ -82,7 +90,7 @@ class RAGASEvaluator:
             self._faithfulness = faithfulness
             self._answer_relevancy = answer_relevancy
             self._context_precision = context_precision
-            self._ragas_available = True
+            self._ragas_loaded = True
             logger.info("RAGAS evaluation backend is available.")
 
         except ImportError as exc:
@@ -91,12 +99,24 @@ class RAGASEvaluator:
                 "Falling back to heuristic scoring.",
                 exc,
             )
+            self._ragas_loaded = False
         except Exception as exc:
             logger.warning(
                 "RAGAS initialisation failed (%s). "
                 "Falling back to heuristic scoring.",
                 exc,
             )
+            self._ragas_loaded = False
+
+        return self._ragas_loaded
+
+    @property
+    def _ragas_available(self) -> bool:
+        return self._ensure_ragas_loaded()
+
+    @_ragas_available.setter
+    def _ragas_available(self, val: bool) -> None:
+        self._ragas_loaded = val
 
     # ------------------------------------------------------------------
     # Public API

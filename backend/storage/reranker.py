@@ -1,5 +1,4 @@
 import asyncio
-from sentence_transformers import CrossEncoder
 from typing import List, Dict
 from opentelemetry import trace
 from backend.core.logging import get_logger
@@ -26,12 +25,14 @@ class Reranker:
 
             try:
                 logger.info(f"Loading reranker model: {self.model_name}")
+                from sentence_transformers import CrossEncoder
                 # Load the model inside a separate thread to prevent blocking event loop
                 self.model = await asyncio.to_thread(CrossEncoder, self.model_name)
                 logger.info("Reranker model loaded successfully")
             except Exception as e:
-                logger.error(f"Failed to load reranker: {str(e)}")
+                logger.warning(f"Could not load CrossEncoder (running in low-memory mode, using hybrid RRF ranker): {str(e)}")
                 self.model = None
+
 
     async def rerank(self, query: str, documents: List[Dict], top_k: int = 5) -> List[Dict]:
         """Async reranking using CrossEncoder in a background thread."""

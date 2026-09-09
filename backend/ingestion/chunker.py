@@ -1,6 +1,5 @@
 import hashlib
 from dataclasses import dataclass
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from typing import List, Optional
 from backend.core.config import settings
 
@@ -21,6 +20,74 @@ class Chunk:
     text: str
 
 
+def _split_text_recursively(
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    separators: Optional[List[str]] = None,
+) -> List[str]:
+    """Pure-Python recursive text splitter avoiding heavy NLP/torch dependencies."""
+    if not text:
+        return []
+
+    if separators is None:
+        separators = ["\n\n", "\n", " ", ""]
+
+    separator = separators[-1]
+    new_separators: List[str] = []
+    for i, sep in enumerate(separators):
+        if sep == "":
+            separator = ""
+            break
+        if sep in text:
+            separator = sep
+            new_separators = separators[i + 1:]
+            break
+
+    splits = text.split(separator) if separator else list(text)
+
+    chunks: List[str] = []
+    current_doc: List[str] = []
+    total = 0
+
+    for s in splits:
+        if not s:
+            continue
+        s_len = len(s)
+        if s_len > chunk_size and new_separators:
+            if current_doc:
+                doc_str = separator.join(current_doc).strip()
+                if doc_str:
+                    chunks.append(doc_str)
+                current_doc = []
+                total = 0
+            sub_chunks = _split_text_recursively(s, chunk_size, chunk_overlap, new_separators)
+            chunks.extend(sub_chunks)
+            continue
+
+        sep_len = len(separator) if current_doc else 0
+        if total + s_len + sep_len > chunk_size:
+            if current_doc:
+                doc_str = separator.join(current_doc).strip()
+                if doc_str:
+                    chunks.append(doc_str)
+                while current_doc and total > chunk_overlap:
+                    popped = current_doc.pop(0)
+                    total -= len(popped) + (len(separator) if current_doc else 0)
+            current_doc.append(s)
+            total += s_len + (len(separator) if len(current_doc) > 1 else 0)
+        else:
+            current_doc.append(s)
+            total += s_len + sep_len
+
+    if current_doc:
+        doc_str = separator.join(current_doc).strip()
+        if doc_str:
+            chunks.append(doc_str)
+
+    return chunks
+
+
 class Chunker:
     """Splits documents into chunks with deterministic, content-addressed IDs.
 
@@ -35,12 +102,6 @@ class Chunker:
     def __init__(self, chunk_size: Optional[int] = None, chunk_overlap: Optional[int] = None):
         self.chunk_size = chunk_size or settings.CHUNK_SIZE
         self.chunk_overlap = chunk_overlap or settings.CHUNK_OVERLAP
-        self.splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.chunk_size,
-            chunk_overlap=self.chunk_overlap,
-            length_function=len,
-            is_separator_regex=False,
-        )
 
     def split_text(self, text: str) -> List[Chunk]:
         """Split text into chunks with deterministic content-addressed IDs.
@@ -52,7 +113,11 @@ class Chunker:
             A list of ``Chunk`` objects, each containing a SHA-256-based
             ``chunk_id`` and the chunk ``text``.
         """
-        raw_chunks = self.splitter.split_text(text)
+        raw_chunks = _split_text_recursively(
+            text=text,
+            chunk_size=self.chunk_size,
+            chunk_overlap=self.chunk_overlap,
+        )
         return [
             Chunk(
                 chunk_id=hashlib.sha256(c.encode("utf-8")).hexdigest()[:48],
