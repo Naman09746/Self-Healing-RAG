@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
+import SelfHealingCanvas from "@/components/SelfHealingCanvas";
 import { useAuth } from "@/lib/hooks";
 import {
   ArrowRight,
@@ -255,9 +256,14 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* ── Product Concept Architecture Preview ───────── */}
-          <div className="mt-12 sm:mt-16 max-w-4xl mx-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
-            {/* macOS Chrome Header */}
+          {/* ── Extraordinary Interactive Self-Healing Visual Studio ───────── */}
+          <div className="mt-12 sm:mt-16 max-w-5xl mx-auto space-y-6">
+            {/* 1. Motion Neural Lattice Canvas */}
+            <SelfHealingCanvas />
+
+            {/* 2. Product Concept Architecture Preview */}
+            <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
+              {/* macOS Chrome Header */}
             <div className="h-9 px-4 bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-rose-400" />
@@ -312,7 +318,8 @@ export default function LandingPage() {
             </div>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
       {/* ════════════════════════════════════════════════════
          3. TRUST / TECH STRIP

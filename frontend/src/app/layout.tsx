@@ -55,13 +55,16 @@ const themeScript = `
 (function() {
   try {
     var t = localStorage.getItem('nexus-theme');
-    if (t === 'light' || t === 'dark') {
-      document.documentElement.setAttribute('data-theme', t);
+    if (t === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      document.documentElement.classList.add('dark');
     } else {
       document.documentElement.setAttribute('data-theme', 'light');
+      document.documentElement.classList.remove('dark');
     }
   } catch(e) {
     document.documentElement.setAttribute('data-theme', 'light');
+    document.documentElement.classList.remove('dark');
   }
 })();
 `;
