@@ -106,9 +106,10 @@ class Settings(BaseSettings):
 
     # LangGraph Checkpointer
     LANGGRAPH_CHECKPOINT_URI: str = Field(
-        default="postgresql+psycopg://admin:password@localhost:5432/self_healing_rag",
+        default="",
         description="Postgres connection URI for LangGraph's PostgresCheckpointer. "
-                    "Uses psycopg (sync) driver for checkpoint reads/writes.",
+                    "Uses psycopg (sync) driver for checkpoint reads/writes. "
+                    "If empty and a remote DATABASE_URL is set, automatically derives from DATABASE_URL.",
     )
 
     # Adaptive Retrieval (Phase 3C)
@@ -226,9 +227,12 @@ class Settings(BaseSettings):
         if isinstance(v, str) and v.strip():
             s = v.strip()
             if s.startswith("postgres://"):
-                return s.replace("postgres://", "postgresql+asyncpg://", 1)
+                s = s.replace("postgres://", "postgresql+asyncpg://", 1)
             elif s.startswith("postgresql://") and not s.startswith("postgresql+"):
-                return s.replace("postgresql://", "postgresql+asyncpg://", 1)
+                s = s.replace("postgresql://", "postgresql+asyncpg://", 1)
+            # asyncpg accepts 'ssl=require', but rejects 'sslmode=require'
+            if "sslmode=" in s:
+                s = s.replace("sslmode=", "ssl=")
             return s
         return v
 
@@ -242,7 +246,7 @@ class Settings(BaseSettings):
             elif s.startswith("postgres://"):
                 return s.replace("postgres://", "postgresql://", 1)
             return s
-        return v
+        return ""
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

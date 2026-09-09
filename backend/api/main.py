@@ -66,9 +66,22 @@ async def lifespan(app: FastAPI):
     # 4. Initialize PostgresSaver for stateful graph execution (Phase 4A).
     #    setup() runs DDL migrations to create checkpoint tables if not present.
     checkpointer = None
-    if getattr(settings, "LANGGRAPH_CHECKPOINT_URI", None):
+    checkpoint_uri = settings.LANGGRAPH_CHECKPOINT_URI
+    if (
+        not checkpoint_uri
+        and settings.DATABASE_URL
+        and "localhost" not in settings.DATABASE_URL
+        and "127.0.0.1" not in settings.DATABASE_URL
+    ):
+        checkpoint_uri = (
+            settings.DATABASE_URL
+            .replace("postgresql+asyncpg://", "postgresql://", 1)
+            .replace("ssl=require", "sslmode=require")
+        )
+
+    if checkpoint_uri:
         try:
-            conn = psycopg.connect(settings.LANGGRAPH_CHECKPOINT_URI)
+            conn = psycopg.connect(checkpoint_uri)
             checkpointer = PostgresSaver(conn=conn)
             checkpointer.setup()
             logger.info("PostgresCheckpointer setup completed")
