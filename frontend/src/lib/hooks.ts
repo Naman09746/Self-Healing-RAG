@@ -125,7 +125,7 @@ export function useQuery() {
       return response;
     } catch (err) {
       setError((err as Error).message);
-      return null;
+      throw err;
     } finally {
       setProcessing(false);
     }

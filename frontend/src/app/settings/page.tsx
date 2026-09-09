@@ -129,6 +129,9 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       localStorage.setItem("nexus_settings", JSON.stringify(form));
+      if (form.apiEndpoint) {
+        localStorage.setItem("nexus_api_endpoint", form.apiEndpoint.trim());
+      }
       setSaved(true);
       toast.success("Runtime configuration saved successfully!");
       setTimeout(() => setSaved(false), 3000);

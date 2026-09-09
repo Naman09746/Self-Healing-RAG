@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import {
   clearTokens,
+  getBaseUrl,
   type DocumentInfo,
   type MetricsSnapshot,
   type ExperimentTrial,
@@ -549,10 +550,23 @@ function ChatConsole({
       clearTimeout(t4);
       onPhaseChange?.(null);
 
+      const endpoint = getBaseUrl();
+      const errMsg = (err as Error).message || "";
+      const isAuthErr = errMsg.includes("401") || errMsg.toLowerCase().includes("unauthorized");
+
+      let helpText = `⚠️ **Backend unreachable at \`${endpoint}\`**\n\n`;
+      if (isAuthErr) {
+        helpText = `🔒 **Authentication required:** Please sign in or provide a valid access token in Settings.\n\n`;
+      } else {
+        helpText += `The frontend could not establish a connection to FastAPI.\n\n` +
+          `• **If running on Render:** Click **Settings** (top right) and update **FastAPI Base Route** to your Render URL (e.g. \`https://<your-service>.onrender.com/api/v1\`).\n` +
+          `• **Interactive Demo:** Click any of the **Interactive Scenarios** above to test the multi-agent pipeline in simulated mode!`;
+      }
+
       const errorMsg: Message = {
         id: `error-${Date.now()}`,
         role: "assistant",
-        content: `**Error processing query:** ${(err as Error).message || "Connection failure to RAG pipeline."}\n\nPlease verify backend health on port 8000.`,
+        content: helpText,
         timestamp: Date.now(),
         verified: false,
         confidence: 0,

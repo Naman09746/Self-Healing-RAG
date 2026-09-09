@@ -6,8 +6,40 @@
  * and real-time SSE streaming for pipeline results.
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+export function getBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    try {
+      const direct = localStorage.getItem("nexus_api_endpoint");
+      if (direct && direct.trim()) return direct.trim().replace(/\/+$/, "");
+      const stored = localStorage.getItem("nexus_settings");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.apiEndpoint && parsed.apiEndpoint.trim()) {
+          return parsed.apiEndpoint.trim().replace(/\/+$/, "");
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace(/\/+$/, "");
+}
+
+export function getWsUrl(): string {
+  if (typeof window !== "undefined") {
+    try {
+      const base = getBaseUrl();
+      if (base.startsWith("https://")) {
+        return base.replace(/^https:\/\//, "wss://").replace(/\/api\/v1\/?$/, "");
+      } else if (base.startsWith("http://")) {
+        return base.replace(/^http:\/\//, "ws://").replace(/\/api\/v1\/?$/, "");
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+}
 
 // ─── Token Management ─────────────────────────────────────
 
@@ -154,7 +186,7 @@ async function request<T>(
   body?: unknown,
   opts?: { skipAuth?: boolean; timeout?: number }
 ): Promise<T> {
-  const url = `${BASE_URL}${path}`;
+  const url = `${getBaseUrl()}${path}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -230,7 +262,7 @@ export const query = {
     const controller = new AbortController();
     const token = getAccessToken();
 
-    fetch(`${BASE_URL}/query/stream`, {
+    fetch(`${getBaseUrl()}/query/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -304,7 +336,7 @@ export const documents = {
     formData.append("file", file);
 
     const token = getAccessToken();
-    const res = await fetch(`${BASE_URL}/ingest`, {
+    const res = await fetch(`${getBaseUrl()}/ingest`, {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,
