@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import {
   clearTokens,
+  getAccessToken,
   getBaseUrl,
   type DocumentInfo,
   type MetricsSnapshot,
@@ -207,17 +208,27 @@ function TopNav({
         <div className="w-px h-5 bg-slate-200" />
         <ThemeToggle />
         <div className="w-px h-5 bg-slate-200" />
-        <button
-          onClick={() => {
-            clearTokens();
-            window.location.href = "/auth";
-          }}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-          title="Sign out of workspace"
-        >
-          <LogOut size={13} className="text-slate-400" />
-          <span className="hidden sm:inline">Sign out</span>
-        </button>
+        {typeof window !== "undefined" && getAccessToken() ? (
+          <button
+            onClick={() => {
+              clearTokens();
+              window.location.href = "/auth";
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+            title="Sign out of workspace"
+          >
+            <LogOut size={13} className="text-slate-400" />
+            <span className="hidden sm:inline">Sign out</span>
+          </button>
+        ) : (
+          <Link
+            href="/auth"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 shadow-xs transition-colors"
+            title="Sign in to your workspace"
+          >
+            <span>Sign in</span>
+          </Link>
+        )}
       </div>
     </header>
   );

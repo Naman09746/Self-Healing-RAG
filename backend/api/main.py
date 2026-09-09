@@ -177,9 +177,13 @@ async def health_check(request: Request):
     # 2. Redis
     t0 = time.time()
     try:
-        if svc_container and svc_container.session_memory and hasattr(svc_container.session_memory, "redis"):
-            await asyncio.wait_for(svc_container.session_memory.redis.ping(), timeout=2.0)
-            services["redis"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
+        if svc_container and svc_container.session_memory and svc_container.session_memory.pool:
+            conn = await svc_container.session_memory.get_connection()
+            try:
+                await asyncio.wait_for(conn.ping(), timeout=2.0)
+                services["redis"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
+            finally:
+                await conn.aclose()
         else:
             services["redis"] = {"status": "uninitialized"}
     except Exception as e:
