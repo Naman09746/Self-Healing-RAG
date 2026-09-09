@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-export default function DashboardLegacyRedirect() {
+export default function AppIndexRedirect() {
   const router = useRouter();
 
   useEffect(() => {
@@ -11,8 +11,8 @@ export default function DashboardLegacyRedirect() {
   }, [router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-xs text-slate-500">
-      Redirecting to Nexus Core App...
+    <div className="min-h-[50vh] flex items-center justify-center text-xs text-slate-500">
+      Redirecting to dashboard...
     </div>
   );
 }

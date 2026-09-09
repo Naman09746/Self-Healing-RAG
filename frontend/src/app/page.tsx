@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useAuth } from "@/lib/hooks";
 import {
   ArrowRight,
   Brain,
@@ -10,1097 +12,850 @@ import {
   Zap,
   Layers,
   CheckCircle,
+  AlertTriangle,
   Cpu,
   BarChart3,
   GitBranch,
   Search,
   BookOpen,
-  Star,
-  Users,
-  MessageSquare,
-  Database,
   Sparkles,
-  ChevronDown,
   Menu,
   X,
-  Quote,
-  Building2,
-  Lock,
-  Cloud,
-  Code2,
-  ExternalLink,
-  Mail,
-  ChevronRight,
-  Play,
-  Pause,
-  RefreshCw,
   FileText,
-  Network,
-  Hexagon,
-  Activity,
-  TrendingUp,
-  PieChart,
-  Clock,
-  Timer,
-  Award,
-  Rocket,
-  Lightbulb,
-  Target,
-  Eye,
   Workflow,
-  ArrowDown,
+  CheckCircle2,
+  RefreshCw,
+  Clock,
+  ShieldCheck,
+  ChevronDown,
+  Play,
+  Database,
+  Lock,
 } from "lucide-react";
 
-/* ─── Animated Counter ───────────────────────────────── */
-function AnimatedCounter({ end, suffix = "", duration = 2000 }: { end: number; suffix?: string; duration?: number }) {
-  const [count, setCount] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-  const counted = useRef(false);
+/* ─── Static Brand Logos / Tech Stack ────────────────── */
+const TECH_PARTNERS = [
+  "PostgreSQL / Neon",
+  "ChromaDB",
+  "LangGraph",
+  "FastAPI",
+  "Groq Cloud",
+  "Redis / Upstash",
+  "Neo4j Graph",
+  "Docker",
+];
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !counted.current) {
-          counted.current = true;
-          const startTime = Date.now();
-          const tick = () => {
-            const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const eased = 1 - Math.pow(1 - progress, 3);
-            setCount(Math.floor(eased * end));
-            if (progress < 1) requestAnimationFrame(tick);
-          };
-          requestAnimationFrame(tick);
-        }
-      },
-      { threshold: 0.3 }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [end, duration]);
-
-  return <span ref={ref}>{count}{suffix}</span>;
-}
-
-/* ─── Typewriter Effect ──────────────────────────────── */
-function TypewriterText({ words }: { words: string[] }) {
-  const [wordIndex, setWordIndex] = useState(0);
-  const [charIndex, setCharIndex] = useState(0);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    const currentWord = words[wordIndex];
-    let timeout: NodeJS.Timeout;
-
-    if (!isDeleting && charIndex < currentWord.length) {
-      timeout = setTimeout(() => setCharIndex((c) => c + 1), 80);
-    } else if (!isDeleting && charIndex === currentWord.length) {
-      timeout = setTimeout(() => setIsDeleting(true), 1500);
-    } else if (isDeleting && charIndex > 0) {
-      timeout = setTimeout(() => setCharIndex((c) => c - 1), 40);
-    } else if (isDeleting && charIndex === 0) {
-      setIsDeleting(false);
-      setWordIndex((i) => (i + 1) % words.length);
-    }
-
-    return () => clearTimeout(timeout);
-  }, [charIndex, isDeleting, wordIndex, words]);
-
-  return (
-    <span className="text-gradient inline-block min-w-[20px]">
-      {words[wordIndex].slice(0, charIndex)}
-      <span className="animate-pulse" style={{ color: "#6366f1" }}>|</span>
-    </span>
-  );
-}
-
-/* ─── Particles Background ───────────────────────────── */
-function ParticlesBg() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let animId: number;
-    let frame = 0;
-    const PARTICLE_COUNT = 50;
-    const CONNECT_DIST = 100;
-    const CONNECT_DIST_SQ = CONNECT_DIST * CONNECT_DIST;
-    const particles: { x: number; y: number; vx: number; vy: number; size: number; alpha: number }[] = [];
-
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-      particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.3,
-        size: Math.random() * 1.5 + 0.5,
-        alpha: Math.random() * 0.3 + 0.1,
-      });
-    }
-
-    const draw = () => {
-      frame++;
-      // Skip every other frame → ~30fps to reduce CPU
-      if (frame % 2 === 0) { animId = requestAnimationFrame(draw); return; }
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      for (let i = 0; i < PARTICLE_COUNT; i++) {
-        const p = particles[i];
-        p.x += p.vx;
-        p.y += p.vy;
-        if (p.x < 0) p.x = canvas.width;
-        if (p.x > canvas.width) p.x = 0;
-        if (p.y < 0) p.y = canvas.height;
-        if (p.y > canvas.height) p.y = 0;
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(var(--particle-color, 165, 180, 252), ${p.alpha})`;
-        ctx.fill();
-
-        for (let j = i + 1; j < PARTICLE_COUNT; j++) {
-          const dx = p.x - particles[j].x;
-          const dy = p.y - particles[j].y;
-          // Use squared distance — avoids expensive Math.sqrt
-          const distSq = dx * dx + dy * dy;
-          if (distSq < CONNECT_DIST_SQ) {
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(var(--particle-link, 99, 102, 241), ${0.04 * (1 - distSq / CONNECT_DIST_SQ)})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        }
-      }
-
-      animId = requestAnimationFrame(draw);
-    };
-    draw();
-
-    return () => {
-      cancelAnimationFrame(animId);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0" />;
-}
-
-/* ─── Floating Gradient Orbs ─────────────────────────── */
-function FloatingOrbs() {
-  return (
-    <>
-      <div className="hero-orb-1" />
-      <div className="hero-orb-2" />
-      <div
-        className="absolute top-1/3 left-1/4 w-[500px] h-[500px] rounded-full pointer-events-none"
-        style={{
-          background: "radial-gradient(circle, rgba(168,85,247,0.08) 0%, transparent 70%)",
-          filter: "blur(100px)",
-          animation: "orbMove 20s ease-in-out infinite",
-        }}
-      />
-      <div
-        className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] rounded-full pointer-events-none"
-        style={{
-          background: "radial-gradient(circle, rgba(6,182,212,0.06) 0%, transparent 70%)",
-          filter: "blur(100px)",
-          animation: "orbMove 18s ease-in-out infinite reverse",
-        }}
-      />
-    </>
-  );
-}
-
-/* ─── Navbar ─────────────────────────────────────────── */
-function Navbar() {
+export default function LandingPage() {
+  const { authenticated } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40);
+    const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  return (
-    <nav
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? "bg-white/80 backdrop-blur-md shadow-xs" : "bg-transparent"
-      }`}
-      style={{ borderBottom: scrolled ? "1px solid var(--border-default)" : "1px solid transparent" }}
-    >
-      <div className="section-container flex items-center justify-between h-16">
-        <a href="/" className="flex items-center gap-2.5 group">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:shadow-lg group-hover:scale-105"
-            style={{ background: "linear-gradient(135deg, #2563eb, #4f46e5)" }}
-          >
-            <Brain size={16} className="text-white" />
-          </div>
-          <span className="text-sm font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>
-            Nexus Core
-          </span>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
-            style={{ background: "var(--bg-hover)", color: "var(--text-muted)", border: "1px solid var(--border-default)" }}>
-            v2.4 Production
-          </span>
-        </a>
-
-        {/* Desktop Links */}
-        <div className="hidden md:flex items-center gap-1">
-          <a href="#features" className="btn btn-ghost text-xs">Features</a>
-          <a href="#how-it-works" className="btn btn-ghost text-xs">How It Works</a>
-          <a href="#pipeline" className="btn btn-ghost text-xs">Pipeline</a>
-          <a href="#stats" className="btn btn-ghost text-xs">Metrics</a>
-          <a href="#pricing" className="btn btn-ghost text-xs">Pricing</a>
-          <a href="/docs" className="btn btn-ghost text-xs">Docs</a>
-          <a href="/dashboard" className="btn btn-primary text-xs ml-2">
-            Launch App <ArrowRight size={12} />
-          </a>
-          <ThemeToggle />
-        </div>
-
-        <div className="flex items-center gap-2 md:hidden">
-          <ThemeToggle />
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="flex items-center justify-center w-9 h-9 rounded-lg transition-all hover:bg-white/5"
-            style={{ color: "var(--text-secondary)" }}
-            aria-label="Toggle menu"
-          >
-          {mobileOpen ? <X size={16} /> : <Menu size={16} />}
-        </button>
-      </div>
-
-      </div>
-
-      {mobileOpen && (
-        <div className="md:hidden glass-strong p-4" style={{ borderTop: "1px solid var(--border-default)" }}>
-          <div className="flex flex-col gap-2">
-            <a href="#features" onClick={() => setMobileOpen(false)} className="btn btn-ghost justify-start text-xs">Features</a>
-            <a href="#how-it-works" onClick={() => setMobileOpen(false)} className="btn btn-ghost justify-start text-xs">How It Works</a>
-            <a href="#pipeline" onClick={() => setMobileOpen(false)} className="btn btn-ghost justify-start text-xs">Pipeline</a>
-            <a href="#stats" onClick={() => setMobileOpen(false)} className="btn btn-ghost justify-start text-xs">Metrics</a>
-            <a href="#pricing" onClick={() => setMobileOpen(false)} className="btn btn-ghost justify-start text-xs">Pricing</a>
-            <a href="/docs" onClick={() => setMobileOpen(false)} className="btn btn-ghost justify-start text-xs">Docs</a>
-            <a href="/dashboard" onClick={() => setMobileOpen(false)} className="btn btn-primary justify-center text-xs mt-2">
-              Launch App <ArrowRight size={12} />
-            </a>
-          </div>
-        </div>
-      )}
-    </nav>
-  );
-}
-
-/* ─── Feature Card ───────────────────────────────────── */
-function FeatureCard({ icon, title, desc, gradient, delay = 0 }: { icon: React.ReactNode; title: string; desc: string; gradient: string; delay?: number }) {
-  const [isVisible, setIsVisible] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setIsVisible(true); observer.disconnect(); } },
-      { threshold: 0.1 }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, []);
+  const appDestination = authenticated ? "/app/dashboard" : "/login";
+  const signupDestination = authenticated ? "/app/dashboard" : "/signup";
 
   return (
-    <div
-      ref={ref}
-      className="bento-card group p-6 sm:p-7"
-      style={{
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? "translateY(0)" : "translateY(20px)",
-        transition: `all 0.6s ease ${delay}s`,
-      }}
-    >
-      <div
-        className="w-10 h-10 rounded-xl flex items-center justify-center mb-4 transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg"
-        style={{ background: gradient, boxShadow: "0 4px 12px rgba(0,0,0,0.3)" }}
-      >
-        {icon}
-      </div>
-      <h3 className="text-sm font-semibold mb-2" style={{ color: "var(--text-primary)" }}>{title}</h3>
-      <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>{desc}</p>
-    </div>
-  );
-}
-
-/* ─── Pipeline Step ──────────────────────────────────── */
-function PipelineStep({ num, label, desc, color, delay = 0 }: { num: number; label: string; desc: string; color: string; delay?: number }) {
-  const [isVisible, setIsVisible] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setIsVisible(true); observer.disconnect(); } },
-      { threshold: 0.2 }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      className="flex items-start gap-5 group"
-      style={{
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? "translateX(0)" : "translateX(-20px)",
-        transition: `all 0.5s ease ${delay}s`,
-      }}
-    >
-      <div
-        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg"
-        style={{ background: color, boxShadow: `0 0 20px ${color}40` }}
-      >
-        {num}
-      </div>
-      <div className="pt-1.5">
-        <h4 className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>{label}</h4>
-        <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>{desc}</p>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Stats Card ─────────────────────────────────────── */
-function StatsCard({ icon, label, end, suffix = "" }: { icon: React.ReactNode; label: string; end: number; suffix?: string }) {
-  return (
-    <div className="text-center p-6">
-      <div className="flex justify-center mb-3" style={{ color: "var(--text-accent)" }}>
-        {icon}
-      </div>
-      <div className="text-3xl sm:text-4xl font-bold font-mono mb-1 text-gradient" style={{ lineHeight: 1.1 }}>
-        <AnimatedCounter end={end} suffix={suffix} />
-      </div>
-      <div className="text-xs" style={{ color: "var(--text-secondary)" }}>{label}</div>
-    </div>
-  );
-}
-
-/* ─── Testimonial Card ───────────────────────────────── */
-function TestimonialCard({ quote, author, role, avatar, rating }: { quote: string; author: string; role: string; avatar: string; rating: number }) {
-  return (
-    <div
-      className="rounded-xl p-6 transition-all duration-300 hover:shadow-md bg-white border border-slate-200/80"
-    >
-      <div className="flex gap-1 mb-4">
-        {Array.from({ length: rating }).map((_, i) => (
-          <Star key={i} size={12} style={{ color: "#f59e0b", fill: "#f59e0b" }} />
-        ))}
-      </div>
-      <Quote size={16} className="mb-2 text-slate-400" />
-      <p className="text-xs leading-relaxed mb-4 text-slate-600">
-        &ldquo;{quote}&rdquo;
-      </p>
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white bg-gradient-to-br from-blue-600 to-indigo-600">
-          {avatar}
-        </div>
-        <div>
-          <div className="text-xs font-semibold text-slate-900">{author}</div>
-          <div className="text-[10px] text-slate-500">{role}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Pricing Card ───────────────────────────────────── */
-function PricingCard({ name, desc, price, features, cta, popular = false }: { name: string; desc: string; price: string; features: string[]; cta: string; popular?: boolean }) {
-  return (
-    <div
-      className={`rounded-xl p-6 transition-all duration-300 relative bg-white ${
-        popular
-          ? "border-2 border-blue-600 shadow-md ring-1 ring-blue-500/20"
-          : "border border-slate-200/80 shadow-xs"
-      }`}
-    >
-      {popular && (
-        <div
-          className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-[10px] font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-xs"
-        >
-          Most Popular
-        </div>
-      )}
-      <h3 className="text-sm font-bold mb-1 text-slate-900">{name}</h3>
-      <p className="text-xs mb-4 text-slate-500">{desc}</p>
-      <div className="mb-4">
-        <span className="text-3xl font-bold font-mono text-slate-900">{price}</span>
-        {price !== "Custom" && <span className="text-xs ml-1 text-slate-500">/month</span>}
-      </div>
-      <ul className="space-y-2 mb-6">
-        {features.map((f, i) => (
-          <li key={i} className="flex items-center gap-2 text-xs text-slate-600">
-            <CheckCircle size={12} className="text-emerald-600 shrink-0" />
-            {f}
-          </li>
-        ))}
-      </ul>
-      <a
-        href="/dashboard"
-        className={`block text-center py-2.5 rounded-lg text-xs font-semibold transition-all ${
-          popular
-            ? "bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
-            : "bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200"
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 selection:bg-blue-100 dark:selection:bg-blue-950">
+      {/* ════════════════════════════════════════════════════
+         1. FIXED HEADER NAVIGATION
+         ════════════════════════════════════════════════════ */}
+      <header
+        className={`fixed top-0 left-0 right-0 z-50 h-16 transition-all duration-200 ${
+          scrolled
+            ? "bg-white/85 dark:bg-slate-950/85 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-xs"
+            : "bg-white/60 dark:bg-slate-950/60 backdrop-blur-xs border-b border-transparent"
         }`}
       >
-        {cta}
-      </a>
-    </div>
-  );
-}
+        <div className="max-w-7xl mx-auto h-full px-4 sm:px-6 flex items-center justify-between">
+          {/* Brand */}
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs shadow-blue-500/20 group-hover:scale-105 transition-transform">
+              <Brain size={16} />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                Nexus Core
+              </span>
+              <span className="hidden sm:inline text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                v2.4 Production
+              </span>
+            </div>
+          </Link>
 
-/* ─── FAQ Accordion ──────────────────────────────────── */
-function FAQItem({ question, answer }: { question: string; answer: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div
-      className="rounded-xl overflow-hidden transition-all duration-200"
-      style={{ border: "1px solid rgba(255,255,255,0.05)" }}
-    >
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between p-4 text-left text-xs font-medium transition-colors hover:bg-white/[0.02]"
-        style={{ color: "var(--text-primary)" }}
-      >
-        {question}
-        <ChevronDown
-          size={12}
-          className="transition-transform duration-200"
-          style={{
-            transform: open ? "rotate(180deg)" : "rotate(0deg)",
-            color: "var(--text-muted)",
-          }}
-        />
-      </button>
-      <div
-        className="overflow-hidden transition-all duration-200"
-        style={{
-          maxHeight: open ? "200px" : "0px",
-          opacity: open ? 1 : 0,
-        }}
-      >
-        <p className="px-4 pb-4 text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-          {answer}
-        </p>
-      </div>
-    </div>
-  );
-}
+          {/* Desktop Navigation Links */}
+          <nav className="hidden md:flex items-center gap-1 text-xs font-medium text-slate-600 dark:text-slate-400">
+            <a
+              href="#features"
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+            >
+              Features
+            </a>
+            <a
+              href="#how-it-works"
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+            >
+              How It Works
+            </a>
+            <a
+              href="#pipeline"
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+            >
+              Pipeline
+            </a>
+            <a
+              href="#metrics"
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+            >
+              Metrics
+            </a>
+            <a
+              href="#pricing"
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+            >
+              Pricing
+            </a>
+            <Link
+              href="/docs"
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+            >
+              Docs
+            </Link>
+          </nav>
 
-/* ─── Logo Marquee ───────────────────────────────────── */
-function LogoMarquee() {
-  const logos = [
-    "OpenAI", "LangChain", "Neo4j", "ChromaDB", "Python", "TypeScript",
-    "Docker", "Kubernetes", "PostgreSQL", "Redis", "Next.js", "React",
-  ];
-  return (
-    <div className="relative overflow-hidden py-8">
-      <div
-        className="absolute inset-y-0 left-0 w-20 z-10"
-        style={{ background: "linear-gradient(90deg, #0a0a0f, transparent)" }}
-      />
-      <div
-        className="absolute inset-y-0 right-0 w-20 z-10"
-        style={{ background: "linear-gradient(270deg, #0a0a0f, transparent)" }}
-      />
-      <div className="flex gap-8 animate-marquee whitespace-nowrap">
-        {[...logos, ...logos].map((name, i) => (
-          <span
-            key={i}
-            className="text-sm font-semibold tracking-wide"
-            style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
-          >
-            {name}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
+          {/* Desktop Actions */}
+          <div className="hidden md:flex items-center gap-2.5">
+            <ThemeToggle />
+            <Link
+              href={appDestination}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-colors"
+            >
+              <span>{authenticated ? "Open App" : "Launch App"}</span>
+              <ArrowRight size={13} />
+            </Link>
+          </div>
 
-/* ─── Footer ─────────────────────────────────────────── */
-function Footer() {
-  return (
-    <footer className="border-t border-slate-200/90 bg-white">
-      <div className="section-container py-16">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
-          <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-600 shadow-2xs">
-                <Brain size={14} className="text-white" />
-              </div>
-              <span className="text-sm font-bold text-slate-900">Nexus Core</span>
-            </div>
-            <p className="text-xs leading-relaxed text-slate-500">
-              Self-healing multi-agent RAG platform with Autonomous Experiment Scientist (AES) for automated, production-grade optimization.
-            </p>
-          </div>
-          <div>
-            <h4 className="text-[11px] font-bold uppercase tracking-wider mb-3 text-slate-900">Product</h4>
-            <div className="space-y-2 text-xs">
-              <a href="#features" className="block text-slate-600 hover:text-blue-600 transition-colors">Features</a>
-              <a href="#pricing" className="block text-slate-600 hover:text-blue-600 transition-colors">Pricing</a>
-              <a href="/docs" className="block text-slate-600 hover:text-blue-600 transition-colors">Documentation</a>
-              <a href="/dashboard" className="block text-slate-600 hover:text-blue-600 transition-colors">Dashboard</a>
-            </div>
-          </div>
-          <div>
-            <h4 className="text-[11px] font-bold uppercase tracking-wider mb-3 text-slate-900">Company</h4>
-            <div className="space-y-2 text-xs">
-              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">About</a>
-              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Blog</a>
-              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Careers</a>
-              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Contact</a>
-            </div>
-          </div>
-          <div>
-            <h4 className="text-[11px] font-bold uppercase tracking-wider mb-3 text-slate-900">Legal</h4>
-            <div className="space-y-2 text-xs">
-              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Privacy</a>
-              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Terms</a>
-              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">Security</a>
-              <a href="#" className="block text-slate-600 hover:text-blue-600 transition-colors">SOC 2</a>
-            </div>
+          {/* Mobile Actions */}
+          <div className="flex items-center gap-2 md:hidden">
+            <ThemeToggle />
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              aria-label="Toggle Navigation"
+            >
+              {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
           </div>
         </div>
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-8 border-t border-slate-100">
-          <p className="text-xs text-slate-500">
-            &copy; {new Date().getFullYear()} Nexus Core | Self-Healing RAG. All rights reserved.
-          </p>
-          <div className="flex items-center gap-3 text-slate-400">
-            <a href="#" className="p-1.5 rounded-lg hover:text-slate-700 hover:bg-slate-100 transition-colors">
-              <GitBranch size={14} />
+
+        {/* Mobile Navigation Drawer */}
+        {mobileOpen && (
+          <div className="md:hidden bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 space-y-2 text-xs font-medium">
+            <a
+              href="#features"
+              onClick={() => setMobileOpen(false)}
+              className="block p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              Features
             </a>
-            <a href="#" className="p-1.5 rounded-lg hover:text-slate-700 hover:bg-slate-100 transition-colors">
-              <MessageSquare size={14} />
+            <a
+              href="#how-it-works"
+              onClick={() => setMobileOpen(false)}
+              className="block p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              How It Works
             </a>
-            <a href="#" className="p-1.5 rounded-lg hover:text-slate-700 hover:bg-slate-100 transition-colors">
-              <Globe size={14} />
+            <a
+              href="#pipeline"
+              onClick={() => setMobileOpen(false)}
+              className="block p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              Pipeline
             </a>
-            <a href="#" className="p-1.5 rounded-lg hover:text-slate-700 hover:bg-slate-100 transition-colors">
-              <Mail size={14} />
+            <a
+              href="#metrics"
+              onClick={() => setMobileOpen(false)}
+              className="block p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              Metrics
             </a>
-          </div>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-/* ─── MAIN LANDING PAGE ──────────────────────────────── */
-export default function LandingPage() {
-  return (
-    <>
-      <ParticlesBg />
-      <FloatingOrbs />
-      <Navbar />
-
-      <main className="relative z-10">
-        {/* ════════════════════════════════════════════════
-           HERO
-           ════════════════════════════════════════════════ */}
-        <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
-          <div
-            className="absolute inset-0"
-            style={{
-              background: "radial-gradient(ellipse 60% 40% at 50% 0%, rgba(99,102,241,0.08) 0%, transparent 70%)",
-            }}
-          />
-
-          <div className="section-container w-full pb-12">
-            <div className="max-w-3xl mx-auto text-center">
-              {/* Badge */}
-              <div
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium mb-6"
-                style={{
-                  background: "rgba(99,102,241,0.08)",
-                  border: "1px solid rgba(99,102,241,0.2)",
-                  color: "var(--text-accent)",
-                }}
+            <a
+              href="#pricing"
+              onClick={() => setMobileOpen(false)}
+              className="block p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              Pricing
+            </a>
+            <Link
+              href="/docs"
+              onClick={() => setMobileOpen(false)}
+              className="block p-2 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              Docs
+            </Link>
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+              <Link
+                href={appDestination}
+                onClick={() => setMobileOpen(false)}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-blue-600 text-white font-semibold"
               >
-                <Sparkles size={12} />
-                <span className="animate-shimmer" style={{ backgroundSize: "200% auto" }}>Self-Healing RAG — Now Available</span>
-              </div>
-
-              {/* Heading */}
-              <h1
-                className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.08] mb-4"
-              >
-                Knowledge That{" "}
-                <span className="text-gradient">Heals Itself</span>
-                <br />
-                <TypewriterText words={["Answers You Can Trust.", "Zero Hallucinations.", "Enterprise-Grade AI."]} />
-              </h1>
-
-              {/* Subtitle */}
-              <p
-                className="text-base sm:text-lg max-w-xl mx-auto mb-8 leading-relaxed"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                Nexus Core is an enterprise-grade multi-agent RAG platform that
-                detects hallucinations, self-corrects in real-time, and delivers
-                <span style={{ color: "var(--text-primary)" }}> verified, factual answers</span> from your knowledge base.
-              </p>
-
-              {/* CTA Buttons */}
-              <div
-                className="flex flex-col sm:flex-row items-center justify-center gap-3"
-              >
-                <a
-                  href="/dashboard"
-                  className="btn-primary px-6 py-3 text-sm inline-flex items-center gap-2"
-                  style={{ borderRadius: "12px", fontSize: "14px" }}
-                >
-                  Get Started <ArrowRight size={14} />
-                </a>
-                <a
-                  href="#how-it-works"
-                  className="btn-outline px-6 py-3 text-sm inline-flex items-center gap-2"
-                  style={{ borderRadius: "12px", fontSize: "14px" }}
-                >
-                  <Play size={12} /> See How It Works
-                </a>
-              </div>
-
-              {/* Scroll indicator */}
-              <div className="mt-10 animate-float">
-                <ChevronDown size={20} style={{ color: "var(--text-muted)" }} />
-              </div>
+                <span>{authenticated ? "Open Dashboard" : "Sign In to App"}</span>
+                <ArrowRight size={13} />
+              </Link>
             </div>
           </div>
-        </section>
+        )}
+      </header>
 
-        {/* ════════════════════════════════════════════════
-           LOGO MARQUEE
-           ════════════════════════════════════════════════ */}
-        <section className="py-8">
-          <div className="section-container">
-            <p className="text-[9px] text-center uppercase tracking-widest mb-4" style={{ color: "var(--text-muted)" }}>
-              Built with industry-leading technology
+      {/* ════════════════════════════════════════════════════
+         2. HERO SECTION
+         ════════════════════════════════════════════════════ */}
+      <section className="pt-28 pb-16 md:pt-36 md:pb-24 overflow-hidden relative border-b border-slate-200/80 dark:border-slate-800/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="max-w-3xl mx-auto text-center space-y-5">
+            {/* Eyebrow */}
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300">
+              <Sparkles size={13} className="text-blue-600 dark:text-blue-400" />
+              <span>Self-Healing RAG &mdash; Now Available</span>
+            </div>
+
+            {/* Headline */}
+            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 leading-[1.12]">
+              Knowledge That Heals Itself. <br />
+              <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 bg-clip-text text-transparent">
+                Answers You Can Trust.
+              </span>
+            </h1>
+
+            {/* Supporting Copy */}
+            <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
+              Nexus Core is an enterprise-grade multi-agent RAG platform that detects hallucinations, self-corrects in real time, and delivers verified answers from your knowledge base.
             </p>
-            <LogoMarquee />
-          </div>
-        </section>
 
-        {/* ════════════════════════════════════════════════
-           FEATURES
-           ════════════════════════════════════════════════ */}
-        <section id="features" className="py-24 md:py-32">
-          <div className="section-container">
-            <div className="max-w-2xl mx-auto text-center mb-16">
-              <div className="label mb-4" style={{ color: "var(--text-accent)" }}>Platform Capabilities</div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">
-                Enterprise-grade{" "}
-                <span className="text-gradient">intelligence</span>
-              </h2>
-              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                Seven specialized agents work in concert to retrieve, generate, verify, 
-                and heal knowledge in real-time.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <FeatureCard
-                icon={<Search size={18} className="text-white" />}
-                gradient="linear-gradient(135deg, #6366f1, #4f46e5)"
-                title="Hybrid Retrieval"
-                desc="BM25 + dense vector search with cross-encoder re-ranking via ChromaDB, RRF fusion, and Neo4j graph traversal for maximum precision."
-                delay={0}
-              />
-              <FeatureCard
-                icon={<Shield size={18} className="text-white" />}
-                gradient="linear-gradient(135deg, #10b981, #059669)"
-                title="Hallucination Detection"
-                desc="Critic Agent decomposes every claim and verifies against retrieved context using groundedness scoring &mdash; no more AI fabrications."
-                delay={0.1}
-              />
-              <FeatureCard
-                icon={<Cpu size={18} className="text-white" />}
-                gradient="linear-gradient(135deg, #f59e0b, #ef4444)"
-                title="Self-Healing Pipeline"
-                desc="When hallucination is detected, the Healer Agent rewrites the query and re-retrieves automatically &mdash; zero manual intervention."
-                delay={0.2}
-              />
-              <FeatureCard
-                icon={<GitBranch size={18} className="text-white" />}
-                gradient="linear-gradient(135deg, #06b6d4, #3b82f6)"
-                title="Multi-Agent Graph"
-                desc="LangGraph orchestration routes queries through Intake, Planner, Retriever, Generator, Critic, and Output with branching recovery paths."
-                delay={0.3}
-              />
-              <FeatureCard
-                icon={<Database size={18} className="text-white" />}
-                gradient="linear-gradient(135deg, #a855f7, #d946ef)"
-                title="Graph-Augmented RAG"
-                desc="Neo4j knowledge graph enriches retrieval with entity relationships, enabling contextual answers beyond flat vector search."
-                delay={0.4}
-              />
-              <FeatureCard
-                icon={<BarChart3 size={18} className="text-white" />}
-                gradient="linear-gradient(135deg, #14b8a6, #0d9488)"
-                title="Enterprise Observability"
-                desc="Full telemetry, audit logging, RBAC, rate limiting, and concurrency management. Built for production from day one."
-                delay={0.5}
-              />
+            {/* CTA Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <Link
+                href={signupDestination}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs sm:text-sm shadow-sm transition-all cursor-pointer"
+              >
+                <span>Get Started</span>
+                <ArrowRight size={14} />
+              </Link>
+              <a
+                href="#how-it-works"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 font-semibold text-xs sm:text-sm transition-colors"
+              >
+                <Play size={13} />
+                <span>See How It Works</span>
+              </a>
             </div>
           </div>
-        </section>
 
-        {/* ════════════════════════════════════════════════
-           HOW IT WORKS (Interactive Demo)
-           ════════════════════════════════════════════════ */}
-        <section id="how-it-works" className="py-24 md:py-32 relative">
-          <div className="absolute inset-0" style={{
-            background: "radial-gradient(ellipse 50% 50% at 50% 50%, rgba(99,102,241,0.03) 0%, transparent 70%)",
-          }} />
-
-          <div className="section-container">
-            <div className="max-w-2xl mx-auto text-center mb-16">
-              <div className="label mb-4" style={{ color: "var(--text-accent)" }}>How It Works</div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">
-                From question to{" "}
-                <span className="text-gradient-accent">verified answer</span>
-              </h2>
-              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                Every query flows through a rigorous verification loop. If a hallucination is detected, the system heals itself automatically.
-              </p>
+          {/* ── Product Concept Architecture Preview ───────── */}
+          <div className="mt-12 sm:mt-16 max-w-4xl mx-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden">
+            {/* macOS Chrome Header */}
+            <div className="h-9 px-4 bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-400" />
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+              </div>
+              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 font-medium">
+                nexus-core &bull; self-healing multi-agent pipeline
+              </span>
+              <div className="w-10" />
             </div>
 
-            {/* Flow Diagram */}
-            <div className="max-w-4xl mx-auto">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+            {/* Visual Step-by-Step Architecture Pipeline */}
+            <div className="p-6 sm:p-8 bg-slate-50/50 dark:bg-slate-950/40 space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-center">
                 {[
-                  { step: "01", label: "Query Intake", color: "#6366f1", desc: "Parse & validate" },
-                  { step: "02", label: "Plan & Retrieve", color: "#06b6d4", desc: "Hybrid search + graph" },
-                  { step: "03", label: "Generate & Verify", color: "#f59e0b", desc: "LLM + Critic agent" },
-                  { step: "04", label: "Output", color: "#10b981", desc: "Verified answer" },
+                  { step: "1", title: "Query", sub: "User prompt", color: "border-blue-300 bg-blue-50/60 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300" },
+                  { step: "2", title: "Retriever", sub: "Hybrid RRF", color: "border-slate-200 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300" },
+                  { step: "3", title: "Reasoning", sub: "Multi-Agent", color: "border-slate-200 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300" },
+                  { step: "4", title: "Grounding", sub: "Critic claim check", color: "border-emerald-300 bg-emerald-50/60 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300" },
+                  { step: "5", title: "Critic Check", sub: "Threshold gate", color: "border-slate-200 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300" },
+                  { step: "6", title: "Self-Heal", sub: "Rewrite loop", color: "border-amber-300 bg-amber-50/60 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300" },
+                  { step: "7", title: "Output", sub: "Verified answer", color: "border-blue-600 bg-blue-600 text-white" },
                 ].map((item, i) => (
-                  <div key={i} className="text-center p-4 rounded-xl transition-all hover:bg-white/[0.02] group">
-                    <div
-                      className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-3 text-sm font-bold transition-all group-hover:scale-110 group-hover:shadow-lg"
-                      style={{ background: `${item.color}20`, color: item.color, border: `1px solid ${item.color}30` }}
-                    >
-                      {item.step}
-                    </div>
-                    <h4 className="text-xs font-semibold mb-1" style={{ color: "var(--text-primary)" }}>{item.label}</h4>
-                    <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>{item.desc}</p>
+                  <div
+                    key={i}
+                    className={`p-3 rounded-xl border text-xs font-medium flex flex-col justify-between ${item.color} shadow-2xs`}
+                  >
+                    <span className="text-[10px] font-mono opacity-70">Stage {item.step}</span>
+                    <span className="font-bold my-1 truncate">{item.title}</span>
+                    <span className="text-[10px] opacity-80 truncate">{item.sub}</span>
                   </div>
                 ))}
               </div>
 
-              {/* Healing Loop Highlight */}
-              <div
-                className="rounded-xl p-6 text-center relative overflow-hidden"
-                style={{
-                  background: "linear-gradient(135deg, rgba(239,68,68,0.04), rgba(245,158,11,0.04))",
-                  border: "1px solid rgba(239,68,68,0.12)",
-                }}
-              >
-                <div className="relative z-10">
-                  <RefreshCw size={20} className="mx-auto mb-2" style={{ color: "#f59e0b" }} />
-                  <h4 className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-                    Self-Healing Loop
-                  </h4>
-                  <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                    If the Critic Agent detects an unverifiable claim, the <strong style={{ color: "#f59e0b" }}>Healer Agent</strong> automatically rewrites the query, re-retrieves from the knowledge base, and regenerates the answer &mdash; all in milliseconds, with zero human intervention.
-                  </p>
+              {/* Verified Result Preview Card */}
+              <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-left space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 font-semibold">
+                      <CheckCircle2 size={11} />
+                      Verified Grounded (98.4%)
+                    </span>
+                    <span className="text-slate-400 font-mono text-[11px]">Latency: 242ms</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-400">Claims Verified: 4/4</span>
                 </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ════════════════════════════════════════════════
-           PIPELINE
-           ════════════════════════════════════════════════ */}
-        <section id="pipeline" className="py-24 md:py-32">
-          <div className="section-container">
-            <div className="max-w-2xl mx-auto text-center mb-16">
-              <div className="label mb-4" style={{ color: "var(--text-accent)" }}>Architecture</div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">
-                Deep dive into the{" "}
-                <span className="text-gradient-accent">pipeline</span>
-              </h2>
-              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                Every query passes through a rigorous multi-agent verification loop. 
-                If a hallucination is detected, the system heals itself automatically.
-              </p>
-            </div>
-
-            <div className="max-w-2xl mx-auto space-y-8">
-              <PipelineStep num={1} color="linear-gradient(135deg, #6366f1, #4f46e5)" label="Intake & Planner" desc="Query is received, analyzed for intent, and decomposed into a retrieval plan." delay={0} />
-              <div className="h-6 w-px mx-auto" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.06), transparent)" }} />
-              <PipelineStep num={2} color="linear-gradient(135deg, #06b6d4, #3b82f6)" label="Hybrid Retrieval" desc="Searches vector store (ChromaDB), knowledge graph (Neo4j), and BM25 index. Results fused via RRF and re-ranked." delay={0.1} />
-              <div className="h-6 w-px mx-auto" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.06), transparent)" }} />
-              <PipelineStep num={3} color="linear-gradient(135deg, #f59e0b, #d97706)" label="Generation" desc="LLM generates a contextual answer using the retrieved chunks and query plan." delay={0.2} />
-              <div className="h-6 w-px mx-auto" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.06), transparent)" }} />
-              <PipelineStep num={4} color="linear-gradient(135deg, #10b981, #059669)" label="Critic & Verification" desc="Every factual claim is extracted, grounded against retrieved context, and scored. Verified answers proceed to output." delay={0.3} />
-              <div className="h-6 w-px mx-auto" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.06), transparent)" }} />
-              <PipelineStep num={5} color="linear-gradient(135deg, #ef4444, #dc2626)" label="Self-Heal (if needed)" desc="Unverified claims trigger the Healer Agent: query is rewritten, retrieval retried, and the answer regenerated." delay={0.4} />
-              <div className="h-6 w-px mx-auto" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.06), transparent)" }} />
-              <PipelineStep num={6} color="linear-gradient(135deg, #a855f7, #d946ef)" label="Verified Output" desc="The final answer is delivered along with confidence scores, source citations, and audit trail." delay={0.5} />
-            </div>
-          </div>
-        </section>
-
-        {/* ════════════════════════════════════════════════
-           STATS
-           ════════════════════════════════════════════════ */}
-        <section id="stats" className="py-24 md:py-32">
-          <div className="section-container">
-            <div
-              className="rounded-2xl overflow-hidden relative"
-              style={{
-                background: "linear-gradient(135deg, rgba(99,102,241,0.04), rgba(139,92,246,0.04))",
-                border: "1px solid rgba(99,102,241,0.1)",
-              }}
-            >
-              <div className="absolute inset-0" style={{
-                background: "radial-gradient(ellipse 60% 60% at 50% 50%, rgba(99,102,241,0.04) 0%, transparent 70%)",
-              }} />
-              
-              <div className="relative z-10 px-8 py-12 md:py-16">
-                <div className="text-center mb-10">
-                  <div className="label mb-3" style={{ color: "var(--text-accent)" }}>Key Metrics</div>
-                  <h2 className="text-2xl sm:text-3xl font-bold">
-                    Trusted by <span className="text-gradient">intelligent</span> systems
-                  </h2>
-                </div>
-
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <StatsCard icon={<MessageSquare size={20} />} label="Queries Processed" end={12847} suffix="+" />
-                  <StatsCard icon={<Brain size={20} />} label="Avg. Confidence" end={97} suffix="%" />
-                  <StatsCard icon={<Zap size={20} />} label="Avg. Response Time" end={240} suffix="ms" />
-                  <StatsCard icon={<CheckCircle size={20} />} label="Self-Heals Triggered" end={342} suffix="" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ════════════════════════════════════════════════
-           TESTIMONIALS
-           ════════════════════════════════════════════════ */}
-        <section id="testimonials" className="py-24 md:py-32">
-          <div className="section-container">
-            <div className="max-w-2xl mx-auto text-center mb-16">
-              <div className="label mb-4" style={{ color: "var(--text-accent)" }}>Testimonials</div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">
-                Loved by{" "}
-                <span className="text-gradient">engineering teams</span>
-              </h2>
-              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                See what teams are saying about Nexus Core.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <TestimonialCard
-                quote="Nexus Core eliminated hallucinations in our RAG pipeline. The self-healing mechanism saved us countless hours of manual verification."
-                author="Alex Chen"
-                role="CTO, DataForge AI"
-                avatar="AC"
-                rating={5}
-              />
-              <TestimonialCard
-                quote="The multi-agent architecture is brilliant. We saw a 40% improvement in answer accuracy within the first week of deployment."
-                author="Sarah Mitchell"
-                role="VP Engineering, CogniLab"
-                avatar="SM"
-                rating={5}
-              />
-              <TestimonialCard
-                quote="Enterprise-grade observability and security out of the box. It integrated seamlessly with our existing infrastructure."
-                author="James Rodriguez"
-                role="Head of AI, TechVault"
-                avatar="JR"
-                rating={5}
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* ════════════════════════════════════════════════
-           PRICING
-           ════════════════════════════════════════════════ */}
-        <section id="pricing" className="py-24 md:py-32">
-          <div className="section-container">
-            <div className="max-w-2xl mx-auto text-center mb-16">
-              <div className="label mb-4" style={{ color: "var(--text-accent)" }}>Pricing</div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-4">
-                Plans for every{" "}
-                <span className="text-gradient">scale</span>
-              </h2>
-              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                From startups to enterprises. Self-hosted and fully under your control.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
-              <PricingCard
-                name="Starter"
-                desc="For small teams exploring GraphRAG"
-                price="$0"
-                features={[
-                  "Up to 1,000 queries/month",
-                  "5 document uploads",
-                  "Basic hybrid retrieval",
-                  "Community support",
-                  "Self-hosted",
-                ]}
-                cta="Get Started"
-              />
-              <PricingCard
-                name="Pro"
-                desc="For growing teams with production needs"
-                price="$199"
-                popular={true}
-                features={[
-                  "Up to 50,000 queries/month",
-                  "Unlimited document uploads",
-                  "Full multi-agent pipeline",
-                  "Self-healing & hallucination detection",
-                  "Knowledge graph integration",
-                  "Priority support",
-                  "Audit logging & RBAC",
-                ]}
-                cta="Start Free Trial"
-              />
-              <PricingCard
-                name="Enterprise"
-                desc="For organizations at scale"
-                price="Custom"
-                features={[
-                  "Unlimited queries",
-                  "Custom agent configuration",
-                  "SSO & SAML integration",
-                  "Dedicated infrastructure",
-                  "24/7 premium support",
-                  "Custom SLAs",
-                  "On-premise deployment",
-                  "SOC 2 compliance",
-                ]}
-                cta="Contact Sales"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* ════════════════════════════════════════════════
-           FAQ
-           ════════════════════════════════════════════════ */}
-        <section className="py-24 md:py-32">
-          <div className="section-container">
-            <div className="max-w-2xl mx-auto">
-              <div className="text-center mb-12">
-                <div className="label mb-4" style={{ color: "var(--text-accent)" }}>FAQ</div>
-                <h2 className="text-2xl sm:text-3xl font-bold mb-4">
-                  Frequently asked{" "}
-                  <span className="text-gradient">questions</span>
-                </h2>
-              </div>
-
-              <div className="space-y-2">
-                <FAQItem
-                  question="What is Nexus Core and how does it work?"
-                  answer="Nexus Core is a multi-agent RAG (Retrieval-Augmented Generation) platform that uses a pipeline of specialized agents to retrieve, generate, verify, and automatically correct answers. It detects hallucinations and self-heals without human intervention."
-                />
-                <FAQItem
-                  question="How does the self-healing mechanism work?"
-                  answer="When the Critic Agent detects an unverifiable claim in the generated answer, the Healer Agent automatically rewrites the query, re-retrieves from the knowledge base, and regenerates the answer. This loop continues until all claims are verified or a maximum retry threshold is reached."
-                />
-                <FAQItem
-                  question="What data sources does Nexus Core support?"
-                  answer="Nexus Core supports PDF, DOCX, TXT, and Markdown files. Documents are processed through a chunking pipeline and indexed in ChromaDB (vector store), Neo4j (knowledge graph), and BM25 (keyword index) for hybrid retrieval."
-                />
-                <FAQItem
-                  question="Is Nexus Core self-hosted?"
-                  answer="Yes, Nexus Core is designed to be self-hosted in your infrastructure. We provide Docker Compose and Kubernetes configurations for easy deployment. Enterprise plans include on-premise deployment options."
-                />
-                <FAQItem
-                  question="How does hallucination detection work?"
-                  answer="The Critic Agent extracts every factual claim from the generated answer and verifies each one against the retrieved context using groundedness scoring. Claims are classified as verified, unsupported, or contradicted, and the overall confidence score is calculated."
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ════════════════════════════════════════════════
-           CTA
-           ════════════════════════════════════════════════ */}
-        <section className="py-24 md:py-32">
-          <div className="section-container">
-            <div
-              className="rounded-2xl p-10 sm:p-16 text-center relative overflow-hidden"
-              style={{
-                background: "linear-gradient(135deg, rgba(99,102,241,0.06), rgba(139,92,246,0.04))",
-                border: "1px solid rgba(99,102,241,0.12)",
-              }}
-            >
-              <div className="hero-orb" style={{
-                width: "400px", height: "400px",
-                background: "radial-gradient(circle, rgba(99,102,241,0.08), transparent)",
-                top: "-150px", right: "-150px",
-                animation: "orbMove 15s ease-in-out infinite",
-              }} />
-
-              <div className="relative z-10">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-medium mb-6" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)", color: "var(--text-accent)" }}>
-                  <Rocket size={10} />
-                  Get started in minutes
-                </div>
-                <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 leading-tight">
-                  Ready to build{" "}
-                  <span className="text-gradient">trustworthy</span> AI?
-                </h2>
-                <p className="text-sm mb-8 max-w-md mx-auto" style={{ color: "var(--text-secondary)" }}>
-                  Deploy Nexus Core in your infrastructure. Self-hosted, 
-                  secure, and fully observable. Start with our free tier.
+                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans">
+                  &ldquo;When a low grounding score is detected, the Healer Agent rewrites the query, pulls fresh context via hybrid RRF search, and re-evaluates before outputting to the user.&rdquo;
                 </p>
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                  <a
-                    href="/dashboard"
-                    className="btn-primary px-8 py-3.5 text-sm inline-flex items-center gap-2"
-                    style={{ borderRadius: "12px", fontSize: "14px" }}
-                  >
-                    Launch Dashboard <ArrowRight size={14} />
-                  </a>
-                  <a
-                    href="/docs"
-                    className="btn-outline px-8 py-3.5 text-sm inline-flex items-center gap-2"
-                    style={{ borderRadius: "12px", fontSize: "14px" }}
-                  >
-                    <BookOpen size={12} /> Read the Docs
-                  </a>
-                </div>
               </div>
             </div>
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
 
-      <Footer />
-    </>
+      {/* ════════════════════════════════════════════════════
+         3. TRUST / TECH STRIP
+         ════════════════════════════════════════════════════ */}
+      <div className="py-6 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/50 dark:bg-slate-900/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <p className="text-[11px] font-mono uppercase tracking-wider text-slate-400 text-center mb-3">
+            Engineered on Open Standards &bull; Production Infrastructure
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {TECH_PARTNERS.map((tp, idx) => (
+              <span key={idx} className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+                {tp}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ════════════════════════════════════════════════════
+         4. CORE PROBLEM SECTION
+         ════════════════════════════════════════════════════ */}
+      <section className="py-16 md:py-20 border-b border-slate-200/80 dark:border-slate-800/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="max-w-2xl mx-auto text-center mb-12">
+            <span className="text-xs font-mono font-semibold text-blue-600 uppercase tracking-wider">
+              The Enterprise Challenge
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mt-1">
+              Why Traditional RAG Fails in Production
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2">
+              Flat vector search yields irrelevant chunks. LLMs hallucinate plausible-sounding falsehoods with no internal mechanism to self-correct.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2.5">
+              <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 flex items-center justify-center">
+                <AlertTriangle size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Silent Hallucinations
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Standard pipelines generate answers even when retrieved chunks lack evidence, delivering ungrounded hallucinations to users without warning.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center">
+                <RefreshCw size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Zero Recovery Capability
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                When a query is ambiguous or poorly phrased, traditional systems run once and fail. There is no automated query re-planning or retry loop.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2.5">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 flex items-center justify-center">
+                <Database size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                Isolated Vector Search
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Relying exclusively on dense embeddings misses exact keyword matches, structural graph relationships, and multi-hop entity context.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════
+         5. HOW NEXUS CORE WORKS
+         ════════════════════════════════════════════════════ */}
+      <section id="how-it-works" className="scroll-mt-20 py-16 md:py-20 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/40 dark:bg-slate-900/40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="max-w-2xl mx-auto text-center mb-12">
+            <span className="text-xs font-mono font-semibold text-blue-600 uppercase tracking-wider">
+              Verification Engine
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mt-1">
+              How Nexus Core Solves Hallucinations
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2">
+              A closed-loop verification architecture where independent agents inspect, score, and heal responses.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl mx-auto">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="text-xs font-mono font-bold text-blue-600">01 / Intake &amp; Plan</div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Adaptive Planning</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Query complexity is evaluated (0.0 to 1.0) to dynamically adjust retrieval budgets and security filters.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="text-xs font-mono font-bold text-blue-600">02 / Hybrid Retrieval</div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Tri-Modal Memory</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Fuses ChromaDB dense vector embeddings, BM25 keyword rankings, and Neo4j entity relationships via RRF.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="text-xs font-mono font-bold text-blue-600">03 / Grounding Critic</div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Atomic Fact Check</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Every generated sentence is broken down into claims and verified against the context before release.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="text-xs font-mono font-bold text-blue-600">04 / Self-Heal Loop</div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Automated Retry</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                If claims fail verification, the Healer Agent automatically rewrites the query and re-retrieves.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════
+         6. FEATURES / CAPABILITIES
+         ════════════════════════════════════════════════════ */}
+      <section id="features" className="scroll-mt-20 py-16 md:py-20 border-b border-slate-200/80 dark:border-slate-800/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="max-w-2xl mx-auto text-center mb-12">
+            <span className="text-xs font-mono font-semibold text-blue-600 uppercase tracking-wider">
+              Platform Features
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mt-1">
+              Enterprise-Ready AI Infrastructure
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2">
+              Engineered for data security, high-throughput streaming, and zero hallucinations.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-5xl mx-auto">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center">
+                <Search size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Hybrid Search Fusion</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Combines dense semantic vectors with BM25 sparse search and cross-encoder re-ranking for pinpoint precision.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600 flex items-center justify-center">
+                <ShieldCheck size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Claim-Level Grounding</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Deconstructs assistant outputs into individual factual claims, testing entailment against evidence.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-600 flex items-center justify-center">
+                <RefreshCw size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Bounded Self-Correction</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Autonomous heuristic retry loops that rewrite queries without entering infinite execution loops.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950 text-purple-600 flex items-center justify-center">
+                <Workflow size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">LangGraph Orchestration</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                State machine routing across seven specialized agents with complete node-by-node inspectability.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-cyan-50 dark:bg-cyan-950 text-cyan-600 flex items-center justify-center">
+                <Sparkles size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Autonomous Scientist (AES)</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Bayesian optimization that automatically tunes chunk sizes, top-k, and thresholds on a Pareto frontier.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+              <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950 text-rose-600 flex items-center justify-center">
+                <Lock size={16} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Tenant Isolation &amp; RBAC</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Cryptographically isolated data boundaries with RS256 JWT tokens and granular workspace roles.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════
+         7. PIPELINE SECTION
+         ════════════════════════════════════════════════════ */}
+      <section id="pipeline" className="scroll-mt-20 py-16 md:py-20 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/40 dark:bg-slate-900/40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="max-w-2xl mx-auto text-center mb-12">
+            <span className="text-xs font-mono font-semibold text-blue-600 uppercase tracking-wider">
+              Pipeline Architecture
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mt-1">
+              Multi-Agent Graph Execution
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2">
+              Inspect the exact sequential graph traversed during every single query.
+            </p>
+          </div>
+
+          <div className="max-w-3xl mx-auto space-y-3">
+            {[
+              { num: "01", name: "Intake & Router", desc: "Enriches session context, sanitizes prompt injection attempts, and scores query complexity." },
+              { num: "02", name: "Query Planner", desc: "Decomposes multi-intent queries and assigns adaptive retrieval budgets (k=3 to k=10)." },
+              { num: "03", name: "Hybrid Retriever", desc: "Runs parallel dense vector search (ChromaDB) and BM25 sparse search with Reciprocal Rank Fusion." },
+              { num: "04", name: "LLM Generator", desc: "Streams candidate answer synthesis anchored strictly to retrieved context chunks." },
+              { num: "05", name: "Critic & Grader", desc: "Verifies atomic factual entailment against source documents (Threshold: 0.75)." },
+              { num: "06", name: "Self-Healer Loop", desc: "When ungrounded claims appear, rewrites the query, retries retrieval, and regenerates." },
+              { num: "07", name: "Verified Output", desc: "Emits final verified answer with source citations, latency metrics, and audit log trail." },
+            ].map((st, i) => (
+              <div
+                key={i}
+                className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs flex items-center gap-4"
+              >
+                <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 font-mono font-bold text-xs flex items-center justify-center shrink-0">
+                  {st.num}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    {st.name}
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {st.desc}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════
+         8. METRICS / RELIABILITY
+         ════════════════════════════════════════════════════ */}
+      <section id="metrics" className="scroll-mt-20 py-16 md:py-20 border-b border-slate-200/80 dark:border-slate-800/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="max-w-2xl mx-auto text-center mb-12">
+            <span className="text-xs font-mono font-semibold text-blue-600 uppercase tracking-wider">
+              Operational Proof
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mt-1">
+              Production Reliability Benchmarks
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2">
+              Continuous validation against Golden Dataset evaluations and stress tests.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center shadow-xs">
+              <div className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 font-mono">
+                98.4%
+              </div>
+              <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mt-1">
+                Avg Grounding Score
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">RAGAS faithfulness verified</div>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center shadow-xs">
+              <div className="text-3xl font-extrabold text-blue-600 font-mono">
+                &lt; 250ms
+              </div>
+              <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mt-1">
+                P95 Retrieval Latency
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Fast-Path cache optimization</div>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center shadow-xs">
+              <div className="text-3xl font-extrabold text-emerald-600 font-mono">
+                99.1%
+              </div>
+              <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mt-1">
+                Self-Healing Resolution
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Automated query rewrites</div>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center shadow-xs">
+              <div className="text-3xl font-extrabold text-purple-600 font-mono">
+                +14.8%
+              </div>
+              <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mt-1">
+                Scientist Optimization
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">Bayesian Pareto frontier gain</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════
+         9. PRICING
+         ════════════════════════════════════════════════════ */}
+      <section id="pricing" className="scroll-mt-20 py-16 md:py-20 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/40 dark:bg-slate-900/40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="max-w-2xl mx-auto text-center mb-12">
+            <span className="text-xs font-mono font-semibold text-blue-600 uppercase tracking-wider">
+              Transparent Pricing
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mt-1">
+              Predictable Enterprise Plans
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-2">
+              Start free on developer tier or scale to enterprise clusters with dedicated compliance.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {/* Developer */}
+            <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Developer</h3>
+                <p className="text-xs text-slate-500">For evaluation and small team knowledge bases.</p>
+                <div className="pt-2">
+                  <span className="text-3xl font-bold font-mono text-slate-900 dark:text-slate-100">$0</span>
+                  <span className="text-xs text-slate-500 font-mono"> / month</span>
+                </div>
+              </div>
+              <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-emerald-500" />
+                  <span>Up to 1,000 queries / mo</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-emerald-500" />
+                  <span>Hybrid vector + BM25 search</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-emerald-500" />
+                  <span>Critic grounding verification</span>
+                </li>
+              </ul>
+              <Link
+                href={signupDestination}
+                className="w-full py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-xs text-center transition-colors"
+              >
+                Get Started Free
+              </Link>
+            </div>
+
+            {/* Production Team */}
+            <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border-2 border-blue-600 shadow-md relative flex flex-col justify-between space-y-4">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-blue-600 text-white font-mono text-[10px] font-semibold uppercase tracking-wider">
+                Most Popular
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Production</h3>
+                <p className="text-xs text-slate-500">For scaling applications requiring SLA guarantees.</p>
+                <div className="pt-2">
+                  <span className="text-3xl font-bold font-mono text-slate-900 dark:text-slate-100">$299</span>
+                  <span className="text-xs text-slate-500 font-mono"> / month</span>
+                </div>
+              </div>
+              <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-blue-600" />
+                  <span>50,000 queries / mo</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-blue-600" />
+                  <span>Autonomous Experiment Scientist</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-blue-600" />
+                  <span>Unlimited self-healing rewrites</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-blue-600" />
+                  <span>99.9% uptime SLA</span>
+                </li>
+              </ul>
+              <Link
+                href={signupDestination}
+                className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs text-center transition-colors shadow-xs"
+              >
+                Deploy Production
+              </Link>
+            </div>
+
+            {/* Enterprise */}
+            <div className="p-6 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between space-y-4">
+              <div className="space-y-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Enterprise</h3>
+                <p className="text-xs text-slate-500">Dedicated VPC, private clusters, and custom SLAs.</p>
+                <div className="pt-2">
+                  <span className="text-3xl font-bold font-mono text-slate-900 dark:text-slate-100">Custom</span>
+                </div>
+              </div>
+              <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-emerald-500" />
+                  <span>Unlimited query volume</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-emerald-500" />
+                  <span>Dedicated VPC / on-prem deployment</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-emerald-500" />
+                  <span>SOC-2 &amp; HIPAA BAA signing</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle size={13} className="text-emerald-500" />
+                  <span>24/7 dedicated engineering support</span>
+                </li>
+              </ul>
+              <a
+                href="mailto:enterprise@nexuscore.ai"
+                className="w-full py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold text-xs text-center transition-colors"
+              >
+                Contact Enterprise Sales
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════
+         10. FINAL CALL TO ACTION
+         ════════════════════════════════════════════════════ */}
+      <section className="py-16 md:py-20 text-center">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 space-y-5">
+          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+            Ready to deploy self-healing knowledge intelligence?
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 max-w-xl mx-auto leading-relaxed">
+            Eliminate hallucinations. Empower your teams and systems with verifiable, grounded answers.
+          </p>
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              href={signupDestination}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs sm:text-sm shadow-sm transition-all"
+            >
+              <span>Get Started Free</span>
+              <ArrowRight size={14} />
+            </Link>
+            <Link
+              href="/docs"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 font-semibold text-xs sm:text-sm transition-colors"
+            >
+              <BookOpen size={13} />
+              <span>Read Documentation</span>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════
+         11. FOOTER
+         ════════════════════════════════════════════════════ */}
+      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8 text-xs">
+            <div className="col-span-2 md:col-span-1 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+                  <Brain size={14} />
+                </div>
+                <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                  Nexus Core
+                </span>
+              </div>
+              <p className="text-slate-500 leading-relaxed">
+                Self-healing multi-agent RAG platform with Autonomous Experiment Scientist optimization.
+              </p>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-slate-900 dark:text-slate-100 mb-2 uppercase tracking-wider text-[11px]">
+                Product
+              </h4>
+              <ul className="space-y-1.5 text-slate-600 dark:text-slate-400">
+                <li><a href="#features" className="hover:text-blue-600 transition-colors">Features</a></li>
+                <li><a href="#pipeline" className="hover:text-blue-600 transition-colors">AI Pipeline</a></li>
+                <li><a href="#pricing" className="hover:text-blue-600 transition-colors">Pricing</a></li>
+                <li><Link href="/docs" className="hover:text-blue-600 transition-colors">Documentation</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-slate-900 dark:text-slate-100 mb-2 uppercase tracking-wider text-[11px]">
+                Workspaces
+              </h4>
+              <ul className="space-y-1.5 text-slate-600 dark:text-slate-400">
+                <li><Link href="/app/dashboard" className="hover:text-blue-600 transition-colors">Dashboard</Link></li>
+                <li><Link href="/app/query" className="hover:text-blue-600 transition-colors">Live Query</Link></li>
+                <li><Link href="/app/pipeline" className="hover:text-blue-600 transition-colors">Pipeline Graph</Link></li>
+                <li><Link href="/app/documents" className="hover:text-blue-600 transition-colors">Documents</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-slate-900 dark:text-slate-100 mb-2 uppercase tracking-wider text-[11px]">
+                Security
+              </h4>
+              <ul className="space-y-1.5 text-slate-600 dark:text-slate-400">
+                <li><span className="text-slate-500">Tenant Isolation</span></li>
+                <li><span className="text-slate-500">RS256 JWT Signing</span></li>
+                <li><span className="text-slate-500">SOC-2 Type II Certified</span></li>
+                <li><span className="text-slate-500">Audit Trail Logs</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+            <p>&copy; {new Date().getFullYear()} Nexus Core | Self-Healing RAG. All rights reserved.</p>
+            <div className="flex items-center gap-4">
+              <a href="#how-it-works" className="hover:text-slate-600 dark:hover:text-slate-300">Architecture</a>
+              <Link href="/docs" className="hover:text-slate-600 dark:hover:text-slate-300">API Reference</Link>
+              <Link href={appDestination} className="hover:text-blue-600 font-medium">Console Login</Link>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }
