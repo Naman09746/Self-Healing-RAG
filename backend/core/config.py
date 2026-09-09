@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
-from typing import Any
+from typing import Any, Union
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -63,7 +64,7 @@ class Settings(BaseSettings):
     )
 
     # CORS Settings
-    CORS_ORIGINS: list[str] = Field(
+    CORS_ORIGINS: Union[list[str], str] = Field(
         default=[
             "http://localhost:3000",
             "http://127.0.0.1:3000",
@@ -72,6 +73,7 @@ class Settings(BaseSettings):
         ],
         description="Allowed CORS origins for API requests."
     )
+
 
     # Redis Settings (supports host/port or single REDIS_URL connection string)
     REDIS_URL: str = Field(
@@ -244,13 +246,24 @@ class Settings(BaseSettings):
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def assemble_cors_origins(cls, v: Any) -> Any:
-        if isinstance(v, str) and v.strip():
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
             s = v.strip()
-            if s == "*":
+            if not s or s == "*":
                 return ["*"]
+            if s.startswith("[") and s.endswith("]"):
+                try:
+                    import json
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list):
+                        return [str(x).strip() for x in parsed]
+                except Exception:
+                    pass
             return [x.strip() for x in s.split(",") if x.strip()]
-        return v
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        return ["*"]
+
 
     def with_overrides(self, **kwargs) -> "Settings":
         """Return a copy of Settings with specified fields overridden without mutating global settings."""
