@@ -80,8 +80,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return settings.RATE_LIMIT_DEFAULT
 
     async def dispatch(self, request: Request, call_next):
-        # Skip preflight requests
-        if request.method == "OPTIONS":
+        # Skip preflight requests, health checks, metrics, and docs
+        if request.method == "OPTIONS" or request.url.path in {
+            "/health",
+            "/api/v1/health",
+            "/metrics",
+            "/docs",
+            "/openapi.json",
+            "/redoc",
+        }:
             return await call_next(request)
 
         # Determine limit for this endpoint

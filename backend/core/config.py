@@ -152,7 +152,7 @@ class Settings(BaseSettings):
         default=60, description="Rate limit window in seconds."
     )
     RATE_LIMIT_FAIL_CLOSED: bool = Field(
-        default=True,
+        default=False,
         description="If True, reject requests when Redis is unavailable. "
                     "If False, allow requests (fallback open).",
     )
