@@ -150,10 +150,9 @@ docker compose restart api         # Restart API only
 | **API** | http://localhost:8000 |
 | **API Docs (Swagger)** | http://localhost:8000/docs |
 | **Prometheus Metrics** | http://localhost:8000/metrics |
-| **ChromaDB** | http://localhost:8001 |
-| **Neo4j Browser** | http://localhost:7474 |
-| **PostgreSQL** | localhost:5432 |
+| **PostgreSQL (pgvector)** | localhost:5432 |
 | **Redis** | localhost:6379 |
+| **Neo4j Browser** | http://localhost:7474 |
 
 ---
 
