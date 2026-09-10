@@ -426,7 +426,7 @@ export default function LandingPage() {
               <div className="text-xs font-mono font-bold text-blue-600">02 / Hybrid Retrieval</div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Tri-Modal Memory</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Fuses ChromaDB dense vector embeddings, BM25 keyword rankings, and Neo4j entity relationships via RRF.
+                Fuses pgvector / ChromaDB dense embeddings, BM25 / tsvector keyword rankings, and Neo4j entity relationships via RRF.
               </p>
             </div>
 
@@ -551,7 +551,7 @@ export default function LandingPage() {
             {[
               { num: "01", name: "Intake & Router", desc: "Enriches session context, sanitizes prompt injection attempts, and scores query complexity." },
               { num: "02", name: "Query Planner", desc: "Decomposes multi-intent queries and assigns adaptive retrieval budgets (k=3 to k=10)." },
-              { num: "03", name: "Hybrid Retriever", desc: "Runs parallel dense vector search (ChromaDB) and BM25 sparse search with Reciprocal Rank Fusion." },
+              { num: "03", name: "Hybrid Retriever", desc: "Runs parallel dense vector search (pgvector / ChromaDB) and sparse search (BM25 / tsvector) with Reciprocal Rank Fusion." },
               { num: "04", name: "LLM Generator", desc: "Streams candidate answer synthesis anchored strictly to retrieved context chunks." },
               { num: "05", name: "Critic & Grader", desc: "Verifies atomic factual entailment against source documents (Threshold: 0.75)." },
               { num: "06", name: "Self-Healer Loop", desc: "When ungrounded claims appear, rewrites the query, retries retrieval, and regenerates." },

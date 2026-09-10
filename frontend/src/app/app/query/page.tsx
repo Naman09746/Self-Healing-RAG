@@ -21,9 +21,14 @@ import {
   Layers,
   ArrowRight,
   Info,
+  Upload,
+  Paperclip,
+  FileUp,
+  FileCheck,
 } from "lucide-react";
-import { query as queryApi, type QueryResponse, type RetrievedChunk } from "@/lib/api";
+import { query as queryApi, documents as docsApi, type QueryResponse, type RetrievedChunk } from "@/lib/api";
 import { useToast } from "@/components/Toast";
+import { useDocuments } from "@/lib/hooks";
 
 interface ChatMessage {
   id: string;
@@ -50,6 +55,7 @@ const SUGGESTED_QUERIES = [
 
 export default function LiveQueryPage() {
   const { toast } = useToast();
+  const { documents: indexedDocs, refresh: refreshDocs } = useDocuments();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -58,8 +64,42 @@ export default function LiveQueryPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, "up" | "down">>({});
 
+  // Document Drag & Drop + Manual Selection State
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [recentUploads, setRecentUploads] = useState<string[]>([]);
+  const [selectedDocNames, setSelectedDocNames] = useState<string[]>([]);
+  const [showDocSelector, setShowDocSelector] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Active query trace state for the selected/latest response
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+
+  const handleDocumentUpload = async (files: FileList | File[]) => {
+    const fileList = Array.from(files);
+    if (!fileList.length) return;
+
+    setUploadingDoc(true);
+    let successCount = 0;
+    const uploadedNames: string[] = [];
+
+    for (const file of fileList) {
+      try {
+        await docsApi.upload(file);
+        successCount++;
+        uploadedNames.push(file.name);
+      } catch (err) {
+        toast.error(`Failed to ingest "${file.name}": ${(err as Error).message}`);
+      }
+    }
+
+    setUploadingDoc(false);
+    if (successCount > 0) {
+      setRecentUploads((prev) => [...uploadedNames, ...prev].slice(0, 5));
+      await refreshDocs();
+      toast.success(`Indexed ${successCount} document${successCount > 1 ? "s" : ""} into vector & sparse stores! Ready to query.`);
+    }
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -204,11 +244,208 @@ export default function LiveQueryPage() {
   ) || [...messages].reverse().find((m) => m.role === "assistant");
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+      }}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Only set false if leaving outer container
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setIsDragging(false);
+      }}
+      onDrop={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+        if (e.dataTransfer.files?.length) {
+          await handleDocumentUpload(e.dataTransfer.files);
+        }
+      }}
+      className="relative flex-1 flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden"
+    >
+      {/* ── Drag & Drop Full-Page Overlay ── */}
+      {isDragging && (
+        <div className="absolute inset-0 z-50 bg-blue-600/90 dark:bg-blue-900/90 backdrop-blur-xs flex flex-col items-center justify-center text-white p-6 border-4 border-dashed border-white/60 animate-in fade-in duration-150">
+          <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-4 animate-bounce">
+            <Upload size={32} />
+          </div>
+          <h3 className="text-lg font-bold">Drop Documents Here to Index</h3>
+          <p className="text-xs text-white/80 mt-1 max-w-sm text-center">
+            Files will be automatically chunked, embedded, and added to the PostgreSQL pgvector &amp; sparse search indexes.
+          </p>
+          <div className="mt-4 px-3 py-1 rounded-full bg-white/10 text-[11px] font-mono">
+            PDF, Markdown (.md), DOCX, TXT, CSV, JSON
+          </div>
+        </div>
+      )}
+
       {/* ── Left Column: Interactive Chat Console ──────────────── */}
       <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
+        {/* Knowledge Base Scope & Manual Document Selector Bar */}
+        <div className="px-4 py-2.5 bg-slate-50/80 dark:bg-slate-950/70 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 overflow-x-auto py-0.5 max-w-full">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider shrink-0 flex items-center gap-1">
+              <FileText size={12} className="text-blue-600" />
+              Target Corpus:
+            </span>
+
+            {/* Scope Badge / Dropdown Toggle */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowDocSelector(!showDocSelector)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-xs font-medium hover:border-blue-400 dark:hover:border-blue-500 shadow-2xs transition-all cursor-pointer"
+              >
+                <span>
+                  {selectedDocNames.length === 0
+                    ? `Entire Knowledge Base (${indexedDocs.length} docs)`
+                    : `Scoped to ${selectedDocNames.length} selected document${selectedDocNames.length > 1 ? "s" : ""}`}
+                </span>
+                <ChevronDown size={12} className={`text-slate-400 transition-transform ${showDocSelector ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* Document Selection Popover */}
+              {showDocSelector && (
+                <div className="absolute left-0 top-full mt-1.5 w-72 sm:w-80 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg z-40 space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                      Select Target Documents
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDocNames([])}
+                        className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        Reset (All)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Document List */}
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                    {indexedDocs.length === 0 ? (
+                      <div className="text-[11px] text-slate-400 text-center py-3">
+                        No documents indexed yet. Upload files below.
+                      </div>
+                    ) : (
+                      indexedDocs.map((doc) => {
+                        const isSelected = selectedDocNames.includes(doc.filename);
+                        return (
+                          <label
+                            key={doc.id}
+                            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedDocNames((prev) => [...prev, doc.filename]);
+                                } else {
+                                  setSelectedDocNames((prev) => prev.filter((name) => name !== doc.filename));
+                                }
+                              }}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                            />
+                            <div className="flex-1 truncate text-xs text-slate-700 dark:text-slate-300 font-medium">
+                              {doc.filename}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {doc.chunks ? `${doc.chunks} chunks` : ""}
+                            </span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Quick Upload from Dropdown */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDocSelector(false);
+                        fileInputRef.current?.click();
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 font-medium cursor-pointer"
+                    >
+                      <Upload size={12} />
+                      <span>Upload &amp; Index New File</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDocSelector(false)}
+                      className="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-semibold"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Selected Document Tags */}
+            {selectedDocNames.map((name) => (
+              <span
+                key={name}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] truncate max-w-[140px]"
+              >
+                <span className="truncate">{name}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDocNames((prev) => prev.filter((n) => n !== name))}
+                  className="text-blue-500 hover:text-blue-700 font-bold ml-0.5"
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors cursor-pointer"
+            >
+              <Upload size={12} />
+              <span className="hidden sm:inline">Upload Files</span>
+            </button>
+          </div>
+        </div>
+
         {/* Chat Stream Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          {/* Recent Uploads Pill Notification */}
+          {recentUploads.length > 0 && (
+            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300">
+              <FileCheck size={14} className="shrink-0 text-emerald-600" />
+              <div className="flex-1 truncate">
+                <span className="font-semibold">Ready to query:</span> {recentUploads.join(", ")}
+              </div>
+              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md bg-emerald-200/60 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-200 shrink-0">
+                Indexed
+              </span>
+            </div>
+          )}
+
+          {uploadingDoc && (
+            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300 animate-pulse">
+              <Loader2 size={14} className="animate-spin text-blue-600" />
+              <span>Ingesting and embedding document chunks into pgvector...</span>
+            </div>
+          )}
+
           {messages.length === 0 && !loading && (
             <div className="h-full flex flex-col items-center justify-center text-center max-w-xl mx-auto py-12">
               <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 flex items-center justify-center text-blue-600 mb-4 shadow-xs">
@@ -218,22 +455,33 @@ export default function LiveQueryPage() {
                 Ask Nexus Core
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md leading-relaxed">
-                Query your indexed documents. Answers are verified in real time across vector and graph memory with automated self-healing.
+                Submit queries to run through the 7-agent Self-Healing RAG pipeline with hybrid retrieval (pgvector + BM25) and hallucination verification.
               </p>
 
+              {/* Quick Drop Zone Box for Empty State */}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-6 w-full p-4 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 bg-slate-50/50 dark:bg-slate-950/50 cursor-pointer transition-colors"
+              >
+                <Upload size={18} className="mx-auto text-slate-400 mb-1" />
+                <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Drag &amp; drop test files here, or click to upload
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Drop your test markdown (.md) or PDF files directly into the query studio
+                </div>
+              </div>
+
               {/* Suggestions */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-6 w-full text-left">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full mt-6 text-left">
                 {SUGGESTED_QUERIES.map((sq, i) => (
                   <button
                     key={i}
                     onClick={() => handleSubmit(sq)}
-                    className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors text-left flex items-start justify-between group"
+                    className="p-3 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 hover:border-blue-200 dark:hover:border-blue-800 text-left text-xs text-slate-700 dark:text-slate-300 transition-all flex items-start gap-2 group cursor-pointer"
                   >
-                    <span className="leading-snug">{sq}</span>
-                    <ArrowRight
-                      size={12}
-                      className="shrink-0 mt-0.5 ml-2 opacity-0 group-hover:opacity-100 text-blue-600 transition-opacity"
-                    />
+                    <ArrowRight size={13} className="text-blue-500 shrink-0 mt-0.5 group-hover:translate-x-0.5 transition-transform" />
+                    <span className="line-clamp-2 leading-relaxed">{sq}</span>
                   </button>
                 ))}
               </div>
@@ -270,74 +518,77 @@ export default function LiveQueryPage() {
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                          <CheckCircle2 size={12} />
-                          <span>Verified &amp; Grounded</span>
+                          <CheckCircle2 size={11} />
+                          <span>Grounded Answer</span>
                         </span>
                       )}
 
                       {msg.groundingScore !== undefined && (
-                        <span className="text-[11px] font-mono font-semibold text-slate-600 dark:text-slate-400">
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
                           Score: {(msg.groundingScore * 100).toFixed(0)}%
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 text-slate-400 text-xs">
-                      {msg.latency && (
-                        <span className="font-mono text-[11px] flex items-center gap-1">
+                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                      {msg.latency !== undefined && (
+                        <span className="flex items-center gap-1">
                           <Clock size={11} />
-                          {msg.latency}ms
+                          <span>{msg.latency}ms</span>
+                        </span>
+                      )}
+                      {msg.retryCount !== undefined && msg.retryCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
+                          {msg.retryCount} retry
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Answer Text */}
-                  <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap font-normal">
+                  {/* Message Content */}
+                  <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
                     {msg.content}
                   </div>
 
-                  {/* Citations / Sources */}
+                  {/* Sources Preview Pill */}
                   {msg.sources && msg.sources.length > 0 && (
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80">
-                      <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                        Retrieved Sources ({msg.sources.length})
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {msg.sources.map((src, sIdx) => (
-                          <div
-                            key={sIdx}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-700 dark:text-slate-300"
-                          >
-                            <FileText size={11} className="text-blue-600 dark:text-blue-400" />
-                            <span className="font-medium truncate max-w-[180px]">
-                              {src.source || `Document ${sIdx + 1}`}
-                            </span>
-                            <span className="text-[10px] font-mono text-slate-400">
-                              {(src.score * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] text-slate-400 font-medium mr-1 flex items-center gap-1">
+                        <FileText size={11} /> Sources:
+                      </span>
+                      {msg.sources.slice(0, 3).map((s, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-mono border border-slate-200 dark:border-slate-700 truncate max-w-[160px]"
+                          title={s.content}
+                        >
+                          {s.source || s.chunk_id || `Source ${idx + 1}`}
+                        </span>
+                      ))}
+                      {msg.sources.length > 3 && (
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          +{msg.sources.length - 3} more
+                        </span>
+                      )}
                     </div>
                   )}
 
-                  {/* Actions (Copy / Feedback) */}
-                  <div className="mt-3 flex items-center justify-between text-xs text-slate-400 pt-2">
-                    <span className="text-[10px] font-mono">
-                      Click to inspect query trace &rarr;
-                    </span>
+                  {/* Actions Footer */}
+                  <div className="mt-3 flex items-center justify-between pt-2 text-slate-400 text-xs">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopy(msg.id, msg.content);
+                      }}
+                      className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                    >
+                      <Copy size={12} />
+                      <span className="text-[11px]">
+                        {copiedId === msg.id ? "Copied" : "Copy"}
+                      </span>
+                    </button>
+
                     <div className="flex items-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCopy(msg.id, msg.content);
-                        }}
-                        className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
-                        title="Copy answer"
-                      >
-                        <Copy size={13} />
-                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -346,7 +597,7 @@ export default function LiveQueryPage() {
                         className={`p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${
                           feedbackGiven[msg.id] === "up" ? "text-emerald-600 font-bold" : ""
                         }`}
-                        title="Helpful"
+                        title="Helpful & Accurate"
                       >
                         <ThumbsUp size={13} />
                       </button>
@@ -389,6 +640,21 @@ export default function LiveQueryPage() {
 
         {/* Input Bar */}
         <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.docx,.doc,.txt,.md,.json,.jsonl,.csv"
+            className="hidden"
+            onChange={async (e) => {
+              if (e.target.files?.length) {
+                await handleDocumentUpload(e.target.files);
+                e.target.value = "";
+              }
+            }}
+          />
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -396,6 +662,21 @@ export default function LiveQueryPage() {
             }}
             className="flex items-end gap-2"
           >
+            {/* Attachment Button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingDoc || loading}
+              title="Attach & Index Documents (PDF, MD, TXT)"
+              className="h-11 w-11 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center transition-all shrink-0 cursor-pointer disabled:opacity-50"
+            >
+              {uploadingDoc ? (
+                <Loader2 size={16} className="animate-spin text-blue-600" />
+              ) : (
+                <Paperclip size={16} />
+              )}
+            </button>
+
             <div className="flex-1 relative">
               <textarea
                 ref={textareaRef}
@@ -408,7 +689,7 @@ export default function LiveQueryPage() {
                   }
                 }}
                 rows={2}
-                placeholder="Ask against your indexed knowledge base (Enter to send, Shift+Enter for new line)..."
+                placeholder="Ask a question, or drag & drop files anywhere to index..."
                 disabled={loading}
                 className="w-full p-3 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 resize-none transition-all"
               />
@@ -463,7 +744,7 @@ export default function LiveQueryPage() {
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              ChromaDB dense vectors + BM25 keyword matching fused via RRF.
+              PostgreSQL pgvector (Dense) + BM25/tsvector (Sparse) fused via RRF.
             </p>
           </div>
 

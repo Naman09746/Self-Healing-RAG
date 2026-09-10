@@ -336,8 +336,8 @@ export default function DashboardPage() {
             {[
               {
                 name: "Hybrid Retriever",
-                sub: "ChromaDB + BM25",
-                status: typeof services.chroma === "object" ? services.chroma?.status : "healthy",
+                sub: "pgvector + BM25",
+                status: (typeof (services.vector_store || services.chroma) === "object" ? (services.vector_store as any || services.chroma as any)?.status : "healthy") || "healthy",
               },
               {
                 name: "LLM Generator",

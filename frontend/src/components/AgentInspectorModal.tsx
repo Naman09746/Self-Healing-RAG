@@ -39,7 +39,7 @@ const AGENT_META_LOOKUP: Record<string, Partial<AgentNodeDetails>> = {
   },
   retriever: {
     name: "Hybrid Retriever Agent",
-    role: "Multi-index dense vector retrieval (ChromaDB), BM25 sparse keyword search, and Neo4j graph traversal.",
+    role: "Multi-index dense vector retrieval (pgvector / ChromaDB), sparse keyword search (tsvector / BM25), and graph traversal.",
     agentType: "Retriever",
     guardrails: ["3.0s Timeout Fallback on Graph DB", "Tenant-scoped Metadata Filter", "Fast-Fail Knowledge Gate"],
     systemPromptSnippet: "Fetch top-K chunks passing 0.5 relevance threshold across dense embeddings and BM25 index.",

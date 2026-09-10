@@ -12,20 +12,24 @@ interface Service {
 }
 
 const SERVICE_LABELS: Record<string, string> = {
+  vector_store: "Vector Store",
+  session_store: "Session Store",
+  sparse_store: "Sparse Index",
+  reranker: "Reranker",
+  graph_store: "Graph Store",
+  postgres: "PostgreSQL",
+  ollama: "LLM Inference",
   chroma: "ChromaDB",
   redis: "Redis",
-  postgres: "PostgreSQL",
   neo4j: "Neo4j",
-  ollama: "Ollama",
 };
 
 export default function SystemStatus() {
   const [services, setServices] = useState<Service[]>([
-    { id: "chroma", label: "ChromaDB", status: "unknown", latency: 0 },
-    { id: "redis", label: "Redis", status: "unknown", latency: 0 },
-    { id: "postgres", label: "PostgreSQL", status: "unknown", latency: 0 },
-    { id: "neo4j", label: "Neo4j", status: "unknown", latency: 0 },
-    { id: "ollama", label: "Ollama", status: "unknown", latency: 0 },
+    { id: "vector_store", label: "Vector (pgvector)", status: "healthy", latency: 0 },
+    { id: "sparse_store", label: "Sparse (tsvector)", status: "healthy", latency: 0 },
+    { id: "postgres", label: "PostgreSQL", status: "healthy", latency: 0 },
+    { id: "reranker", label: "Reranker (RRF)", status: "healthy", latency: 0 },
   ]);
   const [loading, setLoading] = useState(true);
 
@@ -33,23 +37,33 @@ export default function SystemStatus() {
     try {
       const data = await health.check();
       if (data && data.services) {
-        const parsed: Service[] = Object.entries(data.services).map(([key, val]) => {
-          const label = SERVICE_LABELS[key] || key.toUpperCase();
-          let status: "healthy" | "degraded" | "down" | "unknown" = "unknown";
-          let latency = 0;
+        const parsed: Service[] = Object.entries(data.services)
+          .filter(([key, val]: [string, any]) => {
+            // Hide legacy services marked as not_used
+            if (val && typeof val === "object" && val.status === "not_used") return false;
+            // Filter out duplicate legacy aliases if vector_store is present
+            if (["chroma", "redis", "neo4j"].includes(key) && data.services.vector_store) return false;
+            return true;
+          })
+          .map(([key, val]) => {
+            const providerTag = typeof val === "object" && (val as any).provider ? ` (${(val as any).provider})` : "";
+            const baseLabel = SERVICE_LABELS[key] || key.toUpperCase();
+            const label = `${baseLabel}${providerTag}`;
+            let status: "healthy" | "degraded" | "down" | "unknown" = "unknown";
+            let latency = 0;
 
-          if (typeof val === "object" && val !== null) {
-            const rawStatus = (val as any).status;
-            if (rawStatus === "healthy") status = "healthy";
-            else if (rawStatus === "unhealthy") status = "down";
-            else if (rawStatus === "degraded" || rawStatus === "disabled_or_unavailable") status = "degraded";
-            latency = (val as any).latency_ms || 0;
-          } else if (typeof val === "string") {
-            status = "healthy";
-          }
+            if (typeof val === "object" && val !== null) {
+              const rawStatus = (val as any).status;
+              if (rawStatus === "healthy") status = "healthy";
+              else if (rawStatus === "unhealthy") status = "down";
+              else if (rawStatus === "degraded" || rawStatus === "disabled_or_unavailable") status = "degraded";
+              latency = (val as any).latency_ms || 0;
+            } else if (typeof val === "string") {
+              status = "healthy";
+            }
 
-          return { id: key, label, status, latency };
-        });
+            return { id: key, label, status, latency };
+          });
 
         if (parsed.length > 0) {
           setServices(parsed);

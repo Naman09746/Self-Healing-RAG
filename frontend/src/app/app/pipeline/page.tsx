@@ -20,7 +20,7 @@ import { AgentInspectorModal } from "@/components/AgentInspectorModal";
 const PIPELINE_TIMELINE_STEPS = [
   { id: "intake", name: "Intake & Router", typicalMs: 24, role: "Complexity score & security guard" },
   { id: "planner", name: "Query Planner", typicalMs: 38, role: "Adaptive K & intent decomposition" },
-  { id: "retriever", name: "Hybrid Retriever", typicalMs: 112, role: "ChromaDB dense + BM25 + Neo4j" },
+  { id: "retriever", name: "Hybrid Retriever", typicalMs: 112, role: "pgvector dense + BM25 sparse" },
   { id: "generator", name: "LLM Generator", typicalMs: 340, role: "Context synthesis & token streaming" },
   { id: "critic", name: "Critic & Grader", typicalMs: 86, role: "Atomic claim verification" },
   { id: "healer", name: "Self-Healer Loop", typicalMs: 220, role: "Automated rewrite on low grounding" },

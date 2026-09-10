@@ -25,12 +25,21 @@ export function DocumentVault() {
     doc.filename.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleFileUpload = async (file: File) => {
-    try {
-      await upload(file);
-      toast.success(`"${file.name}" ingested and indexed successfully.`);
-    } catch (err) {
-      toast.error(`Ingestion failed: ${(err as Error).message}`);
+  const handleFilesUpload = async (files: FileList | File[]) => {
+    const fileList = Array.from(files);
+    if (!fileList.length) return;
+    
+    let successCount = 0;
+    for (const file of fileList) {
+      try {
+        await upload(file);
+        successCount++;
+      } catch (err) {
+        toast.error(`Failed to ingest "${file.name}": ${(err as Error).message}`);
+      }
+    }
+    if (successCount > 0) {
+      toast.success(`Successfully ingested and indexed ${successCount} document${successCount > 1 ? "s" : ""}.`);
     }
   };
 
@@ -59,7 +68,7 @@ export function DocumentVault() {
               </h2>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Upload PDF, DOCX, Markdown, or TXT documents. Documents are chunked, embedded, and stored across ChromaDB vector store and BM25 index.
+              Upload PDF, DOCX, Markdown, or TXT documents. Documents are chunked, embedded, and stored across pgvector/Chroma and sparse search indexes.
             </p>
           </div>
 
@@ -67,12 +76,12 @@ export function DocumentVault() {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50 cursor-pointer"
             >
               {uploading ? (
                 <>
                   <Loader2 size={13} className="animate-spin" />
-                  <span>Ingesting &amp; Chunking…</span>
+                  <span>Ingesting &amp; Indexing…</span>
                 </>
               ) : (
                 <>
@@ -84,12 +93,12 @@ export function DocumentVault() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.doc,.txt,.md"
+              multiple
+              accept=".pdf,.docx,.doc,.txt,.md,.json,.jsonl,.csv"
               className="hidden"
               onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  await handleFileUpload(file);
+                if (e.target.files?.length) {
+                  await handleFilesUpload(e.target.files);
                   e.target.value = "";
                 }
               }}
@@ -101,28 +110,40 @@ export function DocumentVault() {
         <div
           onDragOver={(e) => {
             e.preventDefault();
+            e.stopPropagation();
             setDragOver(true);
           }}
-          onDragLeave={() => setDragOver(false)}
+          onDragEnter={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragOver(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragOver(false);
+          }}
           onDrop={async (e) => {
             e.preventDefault();
+            e.stopPropagation();
             setDragOver(false);
-            const file = e.dataTransfer.files?.[0];
-            if (file) await handleFileUpload(file);
+            if (e.dataTransfer.files?.length) {
+              await handleFilesUpload(e.dataTransfer.files);
+            }
           }}
           onClick={() => fileInputRef.current?.click()}
-          className={`mt-4 border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${
+          className={`mt-4 border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
             dragOver
-              ? "border-blue-500 bg-blue-50/50"
-              : "border-slate-200 hover:border-slate-300 bg-slate-50/50"
+              ? "border-blue-500 bg-blue-50/80 scale-[1.01] shadow-sm"
+              : "border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 bg-slate-50/50"
           }`}
         >
-          <Upload size={20} className="mx-auto text-slate-400 mb-1.5" />
-          <div className="text-xs font-semibold text-slate-700">
-            Click to upload or drag and drop files here
+          <Upload size={24} className={`mx-auto mb-2 transition-colors ${dragOver ? "text-blue-600 animate-bounce" : "text-slate-400"}`} />
+          <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+            {dragOver ? "Drop files here to start indexing..." : "Drag & drop multiple files here, or click to browse"}
           </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
-            PDF, DOCX, Markdown, or plain text (max 25MB)
+          <div className="text-[11px] text-slate-500 mt-1">
+            Supports PDF, DOCX, Markdown (.md), TXT, CSV, JSON (max 25MB per file)
           </div>
         </div>
 

@@ -54,15 +54,16 @@ def create_intake_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]]:
             "long_term_insights": past_insights,
         }
 
-        await deps.telemetry_collector.log_trace(
-            session_id=state.session_id,
-            query=state.query,
-            phase="intake",
-            agent_name="System",
-            input_data={"original_query": state.query},
-            output_data=result,
-            latency_ms=(time.time() - start_time) * 1000,
-        )
+        if getattr(deps, "telemetry_collector", None):
+            await deps.telemetry_collector.log_trace(
+                session_id=state.session_id,
+                query=state.query,
+                phase="intake",
+                agent_name="System",
+                input_data={"original_query": state.query},
+                output_data=result,
+                latency_ms=(time.time() - start_time) * 1000,
+            )
 
         return result
 
@@ -163,15 +164,16 @@ def create_retrieval_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]
                 model="none",
             )
 
-        await deps.telemetry_collector.log_trace(
-            session_id=state.session_id,
-            query=state.query,
-            phase="retrieval",
-            agent_name="HybridRetriever",
-            input_data={"query": query},
-            output_data={"chunks_count": len(chunks)},
-            latency_ms=(time.time() - start_time) * 1000,
-        )
+        if getattr(deps, "telemetry_collector", None):
+            await deps.telemetry_collector.log_trace(
+                session_id=state.session_id,
+                query=state.query,
+                phase="retrieval",
+                agent_name="HybridRetriever",
+                input_data={"query": query},
+                output_data={"chunks_count": len(chunks)},
+                latency_ms=(time.time() - start_time) * 1000,
+            )
 
         return result
 
