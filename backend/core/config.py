@@ -56,9 +56,9 @@ class Settings(BaseSettings):
 
     # Vector Store Settings — Pluggable Provider
     VECTOR_STORE_PROVIDER: str = Field(
-        default="chroma",
-        description="Vector store backend: 'chroma', 'pgvector', 'qdrant', or 'pinecone'. "
-                    "Default 'chroma' for backward compatibility; 'pgvector' recommended for production.",
+        default="pgvector",
+        description="Vector store backend: 'pgvector', 'chroma', 'qdrant', or 'pinecone'. "
+                    "Default 'pgvector' ($0 Free-Tier on PostgreSQL); 'chroma' available for legacy.",
     )
     VECTOR_STORE_DIM: int = Field(
         default=768,

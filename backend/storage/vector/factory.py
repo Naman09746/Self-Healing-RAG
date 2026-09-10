@@ -15,7 +15,7 @@ def get_vector_store(collection_name: str | None = None) -> VectorStore:
     Supported providers: chroma, pgvector, qdrant, pinecone.
     Falls back to Chroma with warning if provider unavailable.
     """
-    provider = (getattr(settings, "VECTOR_STORE_PROVIDER", "chroma") or "chroma").lower().strip()
+    provider = (getattr(settings, "VECTOR_STORE_PROVIDER", "pgvector") or "pgvector").lower().strip()
     logger.info("Initializing vector store", provider=provider, collection_name=collection_name)
 
     if provider == "pgvector":
