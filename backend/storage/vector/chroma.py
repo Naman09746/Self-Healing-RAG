@@ -42,13 +42,30 @@ class ChromaStore:
                 self.client = chromadb.PersistentClient(path="./chroma_data")
 
         try:
-            from chromadb.utils import embedding_functions
-            self.embedding_function = embedding_functions.OllamaEmbeddingFunction(
-                url=f"{settings.OLLAMA_HOST}/api/embeddings",
-                model_name=settings.EMBEDDING_MODEL,
-            )
+            from chromadb.api.types import EmbeddingFunction, Documents, Embeddings
+            from backend.storage.vector.embeddings import get_embedding_provider
+
+            class _ResilientEmbeddingFunction(EmbeddingFunction[Documents]):
+                def __init__(self) -> None:
+                    pass
+
+                def __call__(self, input: Documents) -> Embeddings:
+                    return get_embedding_provider().embed(list(input))  # type: ignore[return-value]
+
+                @staticmethod
+                def name() -> str:
+                    return "ollama"
+
+                def get_config(self) -> dict[str, Any]:
+                    return {"url": f"{settings.OLLAMA_HOST}/api/embeddings", "model_name": settings.EMBEDDING_MODEL}
+
+                @staticmethod
+                def build_from_config(config: dict[str, Any]) -> "_ResilientEmbeddingFunction":
+                    return _ResilientEmbeddingFunction()
+
+            self.embedding_function = _ResilientEmbeddingFunction()
         except Exception as e:
-            logger.critical("Failed to initialize Ollama embedding function", error=str(e))
+            logger.warning("Could not initialize unified embedding function for Chroma", error=str(e))
             self.embedding_function = None
 
         try:

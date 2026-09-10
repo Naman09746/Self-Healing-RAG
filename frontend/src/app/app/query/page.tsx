@@ -66,6 +66,7 @@ export default function LiveQueryPage() {
 
   // Document Drag & Drop + Manual Selection State
   const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [recentUploads, setRecentUploads] = useState<string[]>([]);
   const [selectedDocNames, setSelectedDocNames] = useState<string[]>([]);
@@ -248,23 +249,28 @@ export default function LiveQueryPage() {
       onDragOver={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        setIsDragging(true);
       }}
       onDragEnter={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        setIsDragging(true);
+        dragCounter.current += 1;
+        if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+          setIsDragging(true);
+        }
       }}
       onDragLeave={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        // Only set false if leaving outer container
-        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-        setIsDragging(false);
+        dragCounter.current -= 1;
+        if (dragCounter.current <= 0) {
+          dragCounter.current = 0;
+          setIsDragging(false);
+        }
       }}
       onDrop={async (e) => {
         e.preventDefault();
         e.stopPropagation();
+        dragCounter.current = 0;
         setIsDragging(false);
         if (e.dataTransfer.files?.length) {
           await handleDocumentUpload(e.dataTransfer.files);
@@ -274,7 +280,7 @@ export default function LiveQueryPage() {
     >
       {/* ── Drag & Drop Full-Page Overlay ── */}
       {isDragging && (
-        <div className="absolute inset-0 z-50 bg-blue-600/90 dark:bg-blue-900/90 backdrop-blur-xs flex flex-col items-center justify-center text-white p-6 border-4 border-dashed border-white/60 animate-in fade-in duration-150">
+        <div className="absolute inset-0 z-50 bg-blue-600/90 dark:bg-blue-900/90 backdrop-blur-xs flex flex-col items-center justify-center text-white p-6 border-4 border-dashed border-white/60 animate-in fade-in duration-150 pointer-events-none">
           <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-4 animate-bounce">
             <Upload size={32} />
           </div>
@@ -461,6 +467,21 @@ export default function LiveQueryPage() {
               {/* Quick Drop Zone Box for Empty State */}
               <div
                 onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (e.dataTransfer.files?.length) {
+                    await handleDocumentUpload(e.dataTransfer.files);
+                  }
+                }}
                 className="mt-6 w-full p-4 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 bg-slate-50/50 dark:bg-slate-950/50 cursor-pointer transition-colors"
               >
                 <Upload size={18} className="mx-auto text-slate-400 mb-1" />
