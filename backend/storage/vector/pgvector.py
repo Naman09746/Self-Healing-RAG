@@ -48,14 +48,12 @@ class PgVectorStore:
         dimension: int | None = None,
         table: str = "vector_chunks",
         ef_search: int | None = None,
-        collection_name: str | None = None,  # compat with ChromaStore signature
+        collection_name: str | None = None,
     ):
         self.dim = dimension or getattr(settings, "VECTOR_STORE_DIM", 768)
         self.table = table
         self.ef_search = ef_search or getattr(settings, "PGVECTOR_EF_SEARCH", 40)
-        # collection_name is ignored but accepted for factory parity
-        if collection_name:
-            logger.info("PgVectorStore ignores collection_name (uses unified table)", collection_name=collection_name)
+        self.collection_name = collection_name
         self._engine = None
         self._sessionmaker = None
         self._embed = get_embedding_provider()
@@ -166,6 +164,9 @@ class PgVectorStore:
         if len(metadatas) < len(chunks):
             metadatas = list(metadatas) + [{} for _ in range(len(chunks) - len(metadatas))]
         enriched = [enrich_metadata(m, tid) for m in metadatas]
+        if self.collection_name:
+            for m in enriched:
+                m.setdefault("collection_name", self.collection_name)
         # Compute embeddings
         try:
             embeddings = self._embed.embed(chunks)
@@ -214,7 +215,7 @@ class PgVectorStore:
                     },
                 )
             await session.commit()
-        logger.info("Added chunks to pgvector", count=len(chunks), tenant_id=tid)
+        logger.info("Added chunks to pgvector", count=len(chunks), tenant_id=tid, collection=self.collection_name)
 
     def query(self, query_text: str, n_results: int = 5, tenant_id: str | None = None) -> dict[str, Any]:
         return self._run_sync(self._query_async(query_text, n_results, tenant_id))
@@ -237,19 +238,25 @@ class PgVectorStore:
                     await session.execute(text(f"SET hnsw.ef_search = {int(self.ef_search)}"))
                 except Exception:
                     pass
-                # Cosine distance: embedding <=> query, smaller is more similar. Return 1 - distance as proxy if needed.
-                # Use ORDER BY embedding <=> :q_emb
+                
+                where_clause = "WHERE tenant_id = :tid"
+                params: dict[str, Any] = {"q_emb": q_emb_str, "tid": tid, "k": n_results}
+                if self.collection_name:
+                    where_clause += " AND metadata->>'collection_name' = :col_name"
+                    params["col_name"] = self.collection_name
+
+                # Cosine distance: embedding <=> query, smaller is more similar.
                 result = await session.execute(
                     text(
                         f"""
                         SELECT id, content, metadata, embedding <=> :q_emb::vector AS distance
                         FROM {self.table}
-                        WHERE tenant_id = :tid
+                        {where_clause}
                         ORDER BY embedding <=> :q_emb::vector
                         LIMIT :k
                         """
                     ),
-                    {"q_emb": q_emb_str, "tid": tid, "k": n_results},
+                    params,
                 )
                 rows = result.fetchall()
                 docs: list[str] = []

@@ -57,31 +57,11 @@ class Settings(BaseSettings):
     # Vector Store Settings — Pluggable Provider
     VECTOR_STORE_PROVIDER: str = Field(
         default="pgvector",
-        description="Vector store backend: 'pgvector', 'chroma', 'qdrant', or 'pinecone'. "
-                    "Default 'pgvector' ($0 Free-Tier on PostgreSQL); 'chroma' available for legacy.",
+        description="Vector store backend: 'pgvector' ($0 Free-Tier on PostgreSQL), 'qdrant', or 'pinecone'.",
     )
     VECTOR_STORE_DIM: int = Field(
         default=768,
         description="Embedding dimension for the vector store. Must match EMBEDDING_MODEL output (nomic-embed-text=768).",
-    )
-    VECTOR_DUAL_WRITE: bool = Field(
-        default=False,
-        description="If True, ingestion writes to both primary and Chroma (legacy) for migration parity verification.",
-    )
-    VECTOR_LEGACY_FALLBACK: bool = Field(
-        default=True,
-        description="If True, query falls back to Chroma on primary store failure (migration safety net).",
-    )
-    CHROMA_HOST: str = Field(default="localhost")
-    CHROMA_PORT: int = Field(default=8000)
-    CHROMA_COLLECTION_NAME: str = Field(default="rag_collection")
-    CHROMA_ALLOW_RESET: bool = Field(
-        default=False,
-        description="Allow ChromaDB reset API. Set to true only in development."
-    )
-    CHROMA_USE_LOCAL: bool = Field(
-        default=True,
-        description="Use local embedded ChromaDB storage without attempting network connection to localhost:8000."
     )
     PGVECTOR_EF_SEARCH: int = Field(
         default=40,

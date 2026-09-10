@@ -1,4 +1,4 @@
-"""Factory for vector stores — centralizes provider selection and fallback."""
+"""Factory for vector stores — centralizes provider selection."""
 
 from __future__ import annotations
 
@@ -12,21 +12,10 @@ logger = get_logger(__name__)
 def get_vector_store(collection_name: str | None = None) -> VectorStore:
     """Create a VectorStore based on settings.VECTOR_STORE_PROVIDER.
 
-    Supported providers: chroma, pgvector, qdrant, pinecone.
-    Falls back to Chroma with warning if provider unavailable.
+    Supported providers: pgvector (default $0 free-tier), qdrant, pinecone.
     """
     provider = (getattr(settings, "VECTOR_STORE_PROVIDER", "pgvector") or "pgvector").lower().strip()
     logger.info("Initializing vector store", provider=provider, collection_name=collection_name)
-
-    if provider == "pgvector":
-        try:
-            from backend.storage.vector.pgvector import PgVectorStore
-
-            return PgVectorStore(collection_name=collection_name)  # type: ignore[return-value]
-        except Exception as e:
-            logger.error("Failed to initialize PgVectorStore, falling back to Chroma", error=str(e))
-            if not getattr(settings, "VECTOR_LEGACY_FALLBACK", True):
-                raise
 
     if provider == "qdrant":
         try:
@@ -34,9 +23,8 @@ def get_vector_store(collection_name: str | None = None) -> VectorStore:
 
             return QdrantStore(collection_name=collection_name)  # type: ignore[return-value]
         except Exception as e:
-            logger.error("Failed to initialize QdrantStore, falling back to Chroma", error=str(e))
-            if not getattr(settings, "VECTOR_LEGACY_FALLBACK", True):
-                raise
+            logger.error("Failed to initialize QdrantStore", error=str(e))
+            raise
 
     if provider == "pinecone":
         try:
@@ -44,13 +32,10 @@ def get_vector_store(collection_name: str | None = None) -> VectorStore:
 
             return PineconeStore(collection_name=collection_name)  # type: ignore[return-value]
         except Exception as e:
-            logger.error("Failed to initialize PineconeStore, falling back to Chroma", error=str(e))
-            if not getattr(settings, "VECTOR_LEGACY_FALLBACK", True):
-                raise
+            logger.error("Failed to initialize PineconeStore", error=str(e))
+            raise
 
-    # Default / fallback: Chroma
-    from backend.storage.vector.chroma import ChromaStore
+    # Default: PostgreSQL pgvector
+    from backend.storage.vector.pgvector import PgVectorStore
 
-    if collection_name:
-        return ChromaStore(collection_name=collection_name)  # type: ignore[return-value]
-    return ChromaStore()  # type: ignore[return-value]
+    return PgVectorStore(collection_name=collection_name)  # type: ignore[return-value]

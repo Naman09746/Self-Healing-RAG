@@ -159,16 +159,15 @@ app.include_router(websocket.router, tags=["WebSocket"])
 @app.get("/health")
 @app.get(f"{settings.API_V1_STR}/health")
 async def health_check(request: Request):
-    """Component health check probing VectorStore (chroma/pgvector/qdrant/pinecone), Redis, Postgres, Neo4j, Ollama."""
+    """Component health check probing VectorStore (pgvector/qdrant/pinecone), Session Store, Postgres, and Ollama/LLM."""
     services: dict[str, Any] = {}
     svc_container = getattr(request.app.state, "svc", None)
-    provider = getattr(settings, "VECTOR_STORE_PROVIDER", "chroma")
+    provider = getattr(settings, "VECTOR_STORE_PROVIDER", "pgvector")
 
     # 1. Vector Store (provider-aware)
     t0 = time.time()
     try:
         if svc_container and svc_container.store:
-            # Prefer heartbeat() method on VectorStore protocol
             if hasattr(svc_container.store, "heartbeat"):
                 try:
                     ok = await asyncio.wait_for(asyncio.to_thread(svc_container.store.heartbeat), timeout=3.0)
@@ -176,27 +175,14 @@ async def health_check(request: Request):
                     ok = svc_container.store.heartbeat() if not asyncio.iscoroutinefunction(svc_container.store.heartbeat) else False
                 if ok:
                     services["vector_store"] = {"status": "healthy", "provider": provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
-                    # Back-compat alias: expose as 'chroma' when provider is chroma so old dashboards keep working
-                    if provider == "chroma":
-                        services["chroma"] = services["vector_store"]
-                    else:
-                        services["chroma"] = {"status": "not_used", "provider": provider}
                 else:
                     services["vector_store"] = {"status": "unhealthy", "provider": provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
-                    services["chroma"] = services["vector_store"]
-            elif hasattr(svc_container.store, "client"):
-                svc_container.store.client.heartbeat()
-                services["vector_store"] = {"status": "healthy", "provider": provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
-                services["chroma"] = services["vector_store"] if provider == "chroma" else {"status": "not_used"}
             else:
-                services["vector_store"] = {"status": "uninitialized", "provider": provider}
-                services["chroma"] = {"status": "uninitialized"}
+                services["vector_store"] = {"status": "healthy", "provider": provider}
         else:
             services["vector_store"] = {"status": "uninitialized", "provider": provider}
-            services["chroma"] = {"status": "uninitialized"}
     except Exception as e:
         services["vector_store"] = {"status": "unhealthy", "provider": provider, "error": str(e)}
-        services["chroma"] = services["vector_store"]
 
     # 2. Session Store (pluggable: pg | redis | memory)
     t0 = time.time()

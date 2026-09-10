@@ -1,9 +1,7 @@
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional
 import asyncio
 from opentelemetry import trace
 from backend.storage.vector.base import VectorStore
-# Keep ChromaStore import for backward compatibility / fallback; actual store is VectorStore
-from backend.storage.vector.chroma import ChromaStore  # noqa: F401
 from backend.storage.sparse.factory import get_sparse_store
 from backend.storage.graph.factory import get_graph_store
 from backend.core.config import settings
@@ -29,15 +27,14 @@ logger = get_logger(__name__)
 class HybridRetriever:
     def __init__(
         self,
-        vector_store: Union[VectorStore, ChromaStore],
-        chroma_store: Optional[Union[VectorStore, ChromaStore]] = None,
+        vector_store: VectorStore,
+        chroma_store: Optional[VectorStore] = None,
         sparse_store=None,
         graph_store_override=None,
     ):
         # Support both positional arg names: HybridRetriever(store) and legacy HybridRetriever(chroma_store=...)
         store = chroma_store if chroma_store is not None else vector_store
-        self.vector_store: VectorStore = store  # type: ignore[assignment]
-        # legacy alias used throughout file (self.chroma) — keep for minimal diff
+        self.vector_store: VectorStore = store
         self.chroma = self.vector_store
         # Pluggable sparse/graph via factories (free-tier defaults: pg_tsvector / memory)
         try:
@@ -57,9 +54,9 @@ class HybridRetriever:
 
     @property
     def vector_engine(self) -> str:
-        prov = getattr(settings, "VECTOR_STORE_PROVIDER", "chroma")
+        prov = getattr(settings, "VECTOR_STORE_PROVIDER", "pgvector")
         # normalize
-        return str(prov).lower() if prov else "chroma"
+        return str(prov).lower() if prov else "pgvector"
 
     async def retrieve(
         self,

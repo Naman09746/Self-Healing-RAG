@@ -12,7 +12,7 @@ make test
 
 # 2. Infrastructure
 echo "🏗️ Ensuring infrastructure is healthy..."
-docker-compose up -d redis chroma postgres ollama
+docker compose up -d postgres ollama
 
 # 3. Model Provisioning
 echo "🧠 Checking LLM models..."

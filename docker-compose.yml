@@ -17,31 +17,6 @@ services:
     cap_drop:
       - ALL
 
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: self-healing-chroma
-    profiles:
-      - chroma
-      - legacy
-    volumes:
-      - chroma_data:/chroma/data
-    ports:
-      - "8001:8000"
-    environment:
-      - IS_PERSISTENT=TRUE
-      - ANONYMIZED_TELEMETRY=FALSE
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    mem_limit: 512m
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-
   qdrant:
     image: qdrant/qdrant:latest
     container_name: self-healing-qdrant
@@ -163,8 +138,6 @@ services:
       - RERANKER_PROVIDER=${RERANKER_PROVIDER:-none}
       - GRAPH_PROVIDER=${GRAPH_PROVIDER:-memory}
       - NEO4J_ENABLED=${NEO4J_ENABLED:-false}
-      - CHROMA_HOST=chromadb
-      - CHROMA_PORT=8000
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_COLLECTION_NAME=${QDRANT_COLLECTION_NAME:-rag_collection}
       - PINECONE_API_KEY=${PINECONE_API_KEY:-}
@@ -212,7 +185,6 @@ services:
 
 volumes:
   ollama_data:
-  chroma_data:
   qdrant_data:
   redis_data:
   postgres_data:

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, List
 from backend.core.logging import get_logger
 from backend.ingestion.chunker import Chunker
-from backend.storage.vector.chroma import ChromaStore
+from backend.storage.vector.factory import get_vector_store
 
 logger = get_logger(__name__)
 
@@ -42,7 +42,7 @@ async def precompute_variant_collections(docs_path: Path = Path("docs")):
     for variant_name, config in VARIANTS.items():
         collection_name = config["collection"]
         chunker = Chunker(chunk_size=config["chunk_size"], chunk_overlap=config["chunk_overlap"])
-        store = ChromaStore(collection_name=collection_name)
+        store = get_vector_store(collection_name=collection_name)
 
         all_chunks = []
         for doc in docs:
@@ -66,21 +66,21 @@ async def precompute_variant_collections(docs_path: Path = Path("docs")):
             total_chunks=len(all_chunks),
         )
 
-        # Store into ChromaDB collection
+        # Store into Vector collection
         try:
             texts = [c["text"] for c in all_chunks]
             metadatas = [c["metadata"] for c in all_chunks]
             ids = [c["chunk_id"] for c in all_chunks]
 
-            # Upsert into collection
-            store.collection.upsert(
-                documents=texts,
+            store.add_chunks(
+                chunks=texts,
                 metadatas=metadatas,
                 ids=ids,
+                tenant_id="default",
             )
             logger.info("Successfully populated collection", collection=collection_name, count=len(ids))
         except Exception as e:
-            logger.warning("Failed to populate ChromaDB collection directly", collection=collection_name, error=str(e))
+            logger.warning("Failed to populate vector collection", collection=collection_name, error=str(e))
 
 
 if __name__ == "__main__":

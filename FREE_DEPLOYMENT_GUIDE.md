@@ -51,7 +51,7 @@ This guide walks you step-by-step through deploying the full **Self-Healing RAG*
 
 | Store | Free-Tier Default | Paid Alternative |
 |---|---|---|
-| `VECTOR_STORE_PROVIDER` | `pgvector` | `qdrant` (`--profile qdrant`), `pinecone`, `chroma` (`--profile chroma`) |
+| `VECTOR_STORE_PROVIDER` | `pgvector` | `qdrant` (`--profile qdrant`), `pinecone` |
 | `SESSION_STORE_PROVIDER` | `pg` | `redis` (Upstash) |
 | `SPARSE_PROVIDER` | `pg_tsvector` | `bm25` (in-memory) |
 | `RERANKER_PROVIDER` | `none` | `cross-encoder` |

@@ -82,7 +82,7 @@ class ServiceContainer:
         from backend.memory.query_cache import QueryCache
         from backend.core.telemetry_collector import telemetry_collector
 
-        col_name = self.settings.CHROMA_COLLECTION_NAME if self.settings else None
+        col_name = getattr(self.settings, "VECTOR_COLLECTION_NAME", None) or getattr(self.settings, "QDRANT_COLLECTION_NAME", None) if self.settings else None
         self.store = get_vector_store(collection_name=col_name)
         self.hybrid_retriever = HybridRetriever(self.store)
         self.reranker = _reranker

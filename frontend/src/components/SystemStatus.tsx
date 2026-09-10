@@ -19,7 +19,6 @@ const SERVICE_LABELS: Record<string, string> = {
   graph_store: "Graph Store",
   postgres: "PostgreSQL",
   ollama: "LLM Inference",
-  chroma: "ChromaDB",
   redis: "Redis",
   neo4j: "Neo4j",
 };

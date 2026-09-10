@@ -40,7 +40,7 @@ open http://localhost:8000    # API
 open http://localhost:8000/docs  # API Docs
 ```
 
-**What this starts:** API server + Frontend + ChromaDB + PostgreSQL + Redis + Neo4j
+**What this starts:** API server + Frontend + PostgreSQL (pgvector) + Redis + Neo4j
 
 ---
 
@@ -56,8 +56,8 @@ ollama serve
 ollama pull llama3.2:1b
 ollama pull nomic-embed-text
 
-# 3. Start lightweight storage containers (no heavy Neo4j/Ollama in Docker)
-docker compose up -d chromadb redis postgres
+# 3. Start lightweight storage container (PostgreSQL with pgvector)
+docker compose up -d postgres
 
 # 4. Run Backend API (Terminal 2)
 source .venv/bin/activate
@@ -81,7 +81,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # 2. Start dependent services (Docker)
-docker compose up -d chroma postgres redis neo4j
+docker compose up -d postgres redis neo4j
 
 # 3. Run migrations
 make db-upgrade

@@ -35,16 +35,6 @@ class IngestionPipeline:
             from backend.storage.graph.neo4j import graph_store as _gfb
 
             self.graph_store = _gfb  # type: ignore[assignment]
-        # Legacy dual-write store for migration parity verification
-        self._legacy_store = None
-        if getattr(settings, "VECTOR_DUAL_WRITE", False) and getattr(settings, "VECTOR_STORE_PROVIDER", "chroma") != "chroma":
-            try:
-                from backend.storage.vector.chroma import ChromaStore
-
-                self._legacy_store = ChromaStore()
-                logger.info("Dual-write enabled: primary + Chroma legacy")
-            except Exception as e:
-                logger.warning("Could not init legacy Chroma for dual-write", error=str(e))
         self.llm = LLMClient()
 
     async def ingest_file(self, file_path: str, tenant_id: Optional[str] = None) -> Dict[str, Any]:
@@ -93,12 +83,6 @@ class IngestionPipeline:
 
             # 4. Dense Store (provider-agnostic) — tenant_id is stamped at the storage layer
             self.vector_store.add_chunks(texts, metadatas, ids, tenant_id=tid)
-            if self._legacy_store is not None:
-                try:
-                    self._legacy_store.add_chunks(texts, metadatas, ids, tenant_id=tid)
-                    logger.info("Dual-write legacy Chroma succeeded", count=len(texts))
-                except Exception as e:
-                    logger.warning("Dual-write legacy Chroma failed", error=str(e))
 
             # 5. Sparse Store — tenant-aware, incremental (pg_tsvector) or rebuilt (bm25 memory)
             try:

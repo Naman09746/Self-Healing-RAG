@@ -33,6 +33,6 @@ def test_resolve_settings_overrides():
     params = {"chunk_variant": "c500_o50", "top_k": 7}
     overrides = registry.resolve_settings_overrides(params)
 
-    assert overrides["CHROMA_COLLECTION_NAME"] == "rag_collection_c500_o50"
+    assert overrides["VECTOR_COLLECTION_NAME"] == "rag_collection_c500_o50"
     assert overrides["top_k"] == 7
     assert "chunk_variant" not in overrides
