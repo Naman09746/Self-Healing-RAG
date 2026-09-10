@@ -16,11 +16,25 @@ data:
   # Model
   MODEL_NAME: "mistral:7b"
   EMBEDDING_MODEL: "nomic-embed-text"
-  # Vector Store
+  # Vector Store (pluggable — free-tier default pgvector)
+  VECTOR_STORE_PROVIDER: "pgvector"
+  VECTOR_STORE_DIM: "768"
+  PGVECTOR_EF_SEARCH: "40"
   CHROMA_PORT: "8000"
   CHROMA_COLLECTION_NAME: "rag_collection"
   CHROMA_ALLOW_RESET: "false"
-  # Redis
+  QDRANT_URL: "http://qdrant-service:6333"
+  QDRANT_COLLECTION_NAME: "rag_collection"
+  PINECONE_INDEX_NAME: "rag-collection"
+  # Session / Sparse / Reranker / Graph (free-tier: pg / pg_tsvector / none / memory)
+  SESSION_STORE_PROVIDER: "pg"
+  SESSION_TTL: "3600"
+  SPARSE_PROVIDER: "pg_tsvector"
+  RERANKER_PROVIDER: "none"
+  RERANKER_MODEL: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  GRAPH_PROVIDER: "memory"
+  NEO4J_ENABLED: "false"
+  # Redis (only when SESSION_STORE_PROVIDER=redis)
   REDIS_PORT: "6379"
   REDIS_DB: "0"
   # Database

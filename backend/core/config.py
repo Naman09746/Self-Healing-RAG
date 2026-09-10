@@ -54,7 +54,24 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = Field(default="nomic-embed-text")
     LLM_TIMEOUT: int = Field(default=30, description="Hard timeout for LLM calls in seconds.")
 
-    # Vector Store Settings
+    # Vector Store Settings — Pluggable Provider
+    VECTOR_STORE_PROVIDER: str = Field(
+        default="chroma",
+        description="Vector store backend: 'chroma', 'pgvector', 'qdrant', or 'pinecone'. "
+                    "Default 'chroma' for backward compatibility; 'pgvector' recommended for production.",
+    )
+    VECTOR_STORE_DIM: int = Field(
+        default=768,
+        description="Embedding dimension for the vector store. Must match EMBEDDING_MODEL output (nomic-embed-text=768).",
+    )
+    VECTOR_DUAL_WRITE: bool = Field(
+        default=False,
+        description="If True, ingestion writes to both primary and Chroma (legacy) for migration parity verification.",
+    )
+    VECTOR_LEGACY_FALLBACK: bool = Field(
+        default=True,
+        description="If True, query falls back to Chroma on primary store failure (migration safety net).",
+    )
     CHROMA_HOST: str = Field(default="localhost")
     CHROMA_PORT: int = Field(default=8000)
     CHROMA_COLLECTION_NAME: str = Field(default="rag_collection")
@@ -65,6 +82,63 @@ class Settings(BaseSettings):
     CHROMA_USE_LOCAL: bool = Field(
         default=True,
         description="Use local embedded ChromaDB storage without attempting network connection to localhost:8000."
+    )
+    PGVECTOR_EF_SEARCH: int = Field(
+        default=40,
+        description="HNSW ef_search parameter for pgvector queries (higher = more recall, slower).",
+    )
+    QDRANT_URL: str = Field(
+        default="",
+        description="Qdrant HTTP/gRPC URL (e.g. http://localhost:6333). Required when VECTOR_STORE_PROVIDER=qdrant.",
+    )
+    QDRANT_API_KEY: str = Field(
+        default="",
+        description="Qdrant API key if auth is enabled.",
+    )
+    QDRANT_COLLECTION_NAME: str = Field(
+        default="rag_collection",
+        description="Qdrant collection name. Tenant scoping is via payload filter.",
+    )
+    PINECONE_API_KEY: str = Field(
+        default="",
+        description="Pinecone API key. Required when VECTOR_STORE_PROVIDER=pinecone.",
+    )
+    PINECONE_INDEX_NAME: str = Field(
+        default="rag-collection",
+        description="Pinecone index name.",
+    )
+    PINECONE_CLOUD: str = Field(default="aws")
+    PINECONE_REGION: str = Field(default="us-east-1")
+
+    # Session Store Settings — Pluggable (free-tier: pg uses Postgres, no extra containers)
+    SESSION_STORE_PROVIDER: str = Field(
+        default="pg",
+        description="Session store backend: 'redis', 'pg', or 'memory'. 'pg' reuses DATABASE_URL (free-tier default).",
+    )
+    SESSION_TTL: int = Field(default=3600, description="Session TTL in seconds.")
+    SESSION_POOL_SIZE: int = Field(default=20, description="Redis connection pool size.")
+
+    # Sparse Store Settings — Pluggable (free-tier: pg_tsvector uses Postgres)
+    SPARSE_PROVIDER: str = Field(
+        default="pg_tsvector",
+        description="Sparse retrieval backend: 'bm25' (in-memory), 'pg_tsvector' (Postgres tsvector, free-tier), 'tantivy' (future).",
+    )
+
+    # Reranker Settings — Pluggable (free-tier: none saves 80MB)
+    RERANKER_PROVIDER: str = Field(
+        default="none",
+        description="Reranker backend: 'none' (RRF only, free-tier), 'cross-encoder' (sentence-transformers), 'cohere' (API).",
+    )
+    RERANKER_MODEL: str = Field(
+        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        description="Cross-encoder model name when RERANKER_PROVIDER=cross-encoder.",
+    )
+    COHERE_API_KEY: str = Field(default="", description="Cohere API key when RERANKER_PROVIDER=cohere.")
+
+    # Graph Store Settings — Pluggable (free-tier: memory, no Neo4j container)
+    GRAPH_PROVIDER: str = Field(
+        default="memory",
+        description="Graph store backend: 'memory' (in-memory, free-tier), 'neo4j' (requires Neo4j service), 'pg' (Postgres adjacency).",
     )
 
     # Neo4j Graph Settings

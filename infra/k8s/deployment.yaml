@@ -68,7 +68,6 @@ spec:
                     - key: app.kubernetes.io/component
                       operator: In
                       values:
-                        - chroma
                         - postgres
                         - redis
                 topologyKey: topology.kubernetes.io/zone

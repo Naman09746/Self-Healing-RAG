@@ -11,7 +11,7 @@ once during application startup and destroyed during shutdown.
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from backend.storage.vector.chroma import ChromaStore
+    from backend.storage.vector.base import VectorStore
     from backend.storage.retriever import HybridRetriever
     from backend.storage.reranker import Reranker
     from backend.agents.planner.agent import PlannerAgent
@@ -38,7 +38,7 @@ class ServiceContainer:
         self._initialized: bool = False
 
         # All services start as None — populated in init()
-        self.store: Optional["ChromaStore"] = None
+        self.store: Optional["VectorStore"] = None
         self.hybrid_retriever: Optional["HybridRetriever"] = None
         self.reranker: Optional["Reranker"] = None
         self.planner: Optional["PlannerAgent"] = None
@@ -63,9 +63,15 @@ class ServiceContainer:
         if self._initialized:
             return
 
-        from backend.storage.vector.chroma import ChromaStore
+        from backend.storage.vector.factory import get_vector_store
         from backend.storage.retriever import HybridRetriever
-        from backend.storage.reranker import reranker
+        try:
+            from backend.storage.reranker.factory import get_reranker
+
+            _reranker = get_reranker()
+        except Exception:
+            from backend.storage.reranker import reranker as _reranker  # type: ignore
+
         from backend.agents.planner.agent import PlannerAgent
         from backend.agents.memory.agent import MemoryAgent
         from backend.agents.generation.agent import GenerationAgent
@@ -77,9 +83,9 @@ class ServiceContainer:
         from backend.core.telemetry_collector import telemetry_collector
 
         col_name = self.settings.CHROMA_COLLECTION_NAME if self.settings else None
-        self.store = ChromaStore(collection_name=col_name) if col_name else ChromaStore()
+        self.store = get_vector_store(collection_name=col_name)
         self.hybrid_retriever = HybridRetriever(self.store)
-        self.reranker = reranker
+        self.reranker = _reranker
         self.planner = PlannerAgent()
         self.memory_agent = MemoryAgent()
         self.generator = GenerationAgent()

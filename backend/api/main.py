@@ -159,35 +159,82 @@ app.include_router(websocket.router, tags=["WebSocket"])
 @app.get("/health")
 @app.get(f"{settings.API_V1_STR}/health")
 async def health_check(request: Request):
-    """Component health check probing Chroma, Redis, Postgres, Neo4j, and Ollama."""
+    """Component health check probing VectorStore (chroma/pgvector/qdrant/pinecone), Redis, Postgres, Neo4j, Ollama."""
     services: dict[str, Any] = {}
     svc_container = getattr(request.app.state, "svc", None)
+    provider = getattr(settings, "VECTOR_STORE_PROVIDER", "chroma")
 
-    # 1. ChromaDB
+    # 1. Vector Store (provider-aware)
     t0 = time.time()
     try:
-        if svc_container and svc_container.store and hasattr(svc_container.store, "client"):
-            svc_container.store.client.heartbeat()
-            services["chroma"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
+        if svc_container and svc_container.store:
+            # Prefer heartbeat() method on VectorStore protocol
+            if hasattr(svc_container.store, "heartbeat"):
+                try:
+                    ok = await asyncio.wait_for(asyncio.to_thread(svc_container.store.heartbeat), timeout=3.0)
+                except Exception:
+                    ok = svc_container.store.heartbeat() if not asyncio.iscoroutinefunction(svc_container.store.heartbeat) else False
+                if ok:
+                    services["vector_store"] = {"status": "healthy", "provider": provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+                    # Back-compat alias: expose as 'chroma' when provider is chroma so old dashboards keep working
+                    if provider == "chroma":
+                        services["chroma"] = services["vector_store"]
+                    else:
+                        services["chroma"] = {"status": "not_used", "provider": provider}
+                else:
+                    services["vector_store"] = {"status": "unhealthy", "provider": provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+                    services["chroma"] = services["vector_store"]
+            elif hasattr(svc_container.store, "client"):
+                svc_container.store.client.heartbeat()
+                services["vector_store"] = {"status": "healthy", "provider": provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+                services["chroma"] = services["vector_store"] if provider == "chroma" else {"status": "not_used"}
+            else:
+                services["vector_store"] = {"status": "uninitialized", "provider": provider}
+                services["chroma"] = {"status": "uninitialized"}
         else:
+            services["vector_store"] = {"status": "uninitialized", "provider": provider}
             services["chroma"] = {"status": "uninitialized"}
     except Exception as e:
-        services["chroma"] = {"status": "unhealthy", "error": str(e)}
+        services["vector_store"] = {"status": "unhealthy", "provider": provider, "error": str(e)}
+        services["chroma"] = services["vector_store"]
 
-    # 2. Redis
+    # 2. Session Store (pluggable: pg | redis | memory)
     t0 = time.time()
+    sess_provider = getattr(settings, "SESSION_STORE_PROVIDER", "pg")
     try:
-        if svc_container and svc_container.session_memory and svc_container.session_memory.pool:
-            conn = await svc_container.session_memory.get_connection()
-            try:
-                await asyncio.wait_for(conn.ping(), timeout=2.0)
-                services["redis"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
-            finally:
-                await conn.aclose()
+        if svc_container and svc_container.session_memory:
+            # Prefer heartbeat()
+            if hasattr(svc_container.session_memory, "heartbeat"):
+                try:
+                    ok = await asyncio.wait_for(svc_container.session_memory.heartbeat(), timeout=2.0)  # type: ignore[attr-defined]
+                except Exception:
+                    ok = False
+                services["session_store"] = {"status": "healthy" if ok else "unhealthy", "provider": sess_provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+            elif hasattr(svc_container.session_memory, "pool") and svc_container.session_memory.pool:
+                conn = await svc_container.session_memory.get_connection()
+                try:
+                    await asyncio.wait_for(conn.ping(), timeout=2.0)
+                    services["session_store"] = {"status": "healthy", "provider": sess_provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+                finally:
+                    try:
+                        await conn.aclose()  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+            else:
+                services["session_store"] = {"status": "uninitialized", "provider": sess_provider}
         else:
-            services["redis"] = {"status": "uninitialized"}
+            services["session_store"] = {"status": "uninitialized", "provider": sess_provider}
     except Exception as e:
-        services["redis"] = {"status": "unhealthy", "error": str(e)}
+        services["session_store"] = {"status": "unhealthy", "provider": sess_provider, "error": str(e)}
+    # Back-compat: expose as redis for old dashboards
+    try:
+        pool = getattr(svc_container.session_memory, "pool", None) if svc_container and svc_container.session_memory else None
+        if sess_provider == "redis" and pool is not None:
+            services["redis"] = services["session_store"]
+        else:
+            services["redis"] = {"status": "not_used" if sess_provider != "redis" else "uninitialized", "provider": sess_provider}
+    except Exception:
+        services["redis"] = {"status": "not_used"}
 
     # 3. PostgreSQL
     t0 = time.time()
@@ -200,24 +247,66 @@ async def health_check(request: Request):
     except Exception as e:
         services["postgres"] = {"status": "unhealthy", "error": str(e)}
 
-    # 4. Neo4j
+    # 3b. Sparse Store (pg_tsvector | bm25)
     t0 = time.time()
+    sparse_provider = getattr(settings, "SPARSE_PROVIDER", "pg_tsvector")
     try:
-        if (
-            svc_container
-            and svc_container.hybrid_retriever
-            and svc_container.hybrid_retriever.graph
-            and getattr(svc_container.hybrid_retriever.graph, "_driver", None)
-        ):
-            await asyncio.wait_for(
-                asyncio.to_thread(svc_container.hybrid_retriever.graph._driver.verify_connectivity),
-                timeout=2.0,
-            )
-            services["neo4j"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
+        if svc_container and svc_container.hybrid_retriever and getattr(svc_container.hybrid_retriever, "bm25", None):
+            sparse = svc_container.hybrid_retriever.bm25
+            if hasattr(sparse, "heartbeat"):
+                ok = await asyncio.wait_for(asyncio.to_thread(sparse.heartbeat), timeout=2.0) if not asyncio.iscoroutinefunction(getattr(sparse, "heartbeat")) else await asyncio.wait_for(sparse.heartbeat(), timeout=2.0)  # type: ignore
+                services["sparse_store"] = {"status": "healthy" if ok else "unhealthy", "provider": sparse_provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+            else:
+                services["sparse_store"] = {"status": "healthy", "provider": sparse_provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
         else:
-            services["neo4j"] = {"status": "disabled_or_unavailable"}
+            services["sparse_store"] = {"status": "uninitialized", "provider": sparse_provider}
     except Exception as e:
-        services["neo4j"] = {"status": "unhealthy", "error": str(e)}
+        services["sparse_store"] = {"status": "unhealthy", "provider": sparse_provider, "error": str(e)}
+
+    # 3c. Reranker (none | cross-encoder)
+    t0 = time.time()
+    reranker_provider = getattr(settings, "RERANKER_PROVIDER", "none")
+    try:
+        if svc_container and svc_container.reranker:
+            if hasattr(svc_container.reranker, "heartbeat"):
+                ok = svc_container.reranker.heartbeat()  # type: ignore[attr-defined]
+                services["reranker"] = {"status": "healthy" if ok else "unhealthy", "provider": reranker_provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+            else:
+                services["reranker"] = {"status": "healthy", "provider": reranker_provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+        else:
+            services["reranker"] = {"status": "uninitialized", "provider": reranker_provider}
+    except Exception as e:
+        services["reranker"] = {"status": "unhealthy", "provider": reranker_provider, "error": str(e)}
+
+    # 4. Graph Store (memory | neo4j | pg)
+    t0 = time.time()
+    graph_provider = getattr(settings, "GRAPH_PROVIDER", "memory")
+    try:
+        graph = None
+        if svc_container and svc_container.hybrid_retriever and getattr(svc_container.hybrid_retriever, "graph", None):
+            graph = svc_container.hybrid_retriever.graph
+        if graph is not None:
+            if hasattr(graph, "heartbeat"):
+                ok = await asyncio.wait_for(asyncio.to_thread(graph.heartbeat), timeout=2.0) if not asyncio.iscoroutinefunction(getattr(graph, "heartbeat")) else await asyncio.wait_for(graph.heartbeat(), timeout=2.0)  # type: ignore
+                # memory is always healthy; neo4j may be unreachable
+                status = "healthy" if ok else ("disabled_or_unavailable" if graph_provider == "memory" else "unhealthy")
+                services["graph_store"] = {"status": status, "provider": graph_provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+            elif getattr(graph, "_driver", None):
+                await asyncio.wait_for(asyncio.to_thread(graph._driver.verify_connectivity), timeout=2.0)  # type: ignore
+                services["graph_store"] = {"status": "healthy", "provider": graph_provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+            else:
+                # memory driver is None but we consider healthy
+                services["graph_store"] = {"status": "healthy", "provider": graph_provider, "latency_ms": round((time.time() - t0) * 1000, 2)}
+        else:
+            services["graph_store"] = {"status": "disabled_or_unavailable", "provider": graph_provider}
+        # Back-compat alias
+        if graph_provider == "neo4j":
+            services["neo4j"] = services["graph_store"]
+        else:
+            services["neo4j"] = {"status": "not_used", "provider": graph_provider}
+    except Exception as e:
+        services["graph_store"] = {"status": "unhealthy", "provider": graph_provider, "error": str(e)}
+        services["neo4j"] = services["graph_store"]
 
     # 5. Ollama
     t0 = time.time()

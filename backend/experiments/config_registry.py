@@ -104,6 +104,9 @@ class ConfigRegistry:
             mapping = self.schema.get("chunk_variant", {}).get("collection_mapping", {})
             collection_name = mapping.get(variant, "rag_collection")
             overrides["CHROMA_COLLECTION_NAME"] = collection_name
+            # Also set for Qdrant/Pinecone/pgvector (unified)
+            overrides["QDRANT_COLLECTION_NAME"] = collection_name
+            overrides["PINECONE_INDEX_NAME"] = collection_name.replace("_", "-")
 
         # Include other parameters that match settings fields or components
         for k, v in params.items():

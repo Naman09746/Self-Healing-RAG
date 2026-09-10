@@ -11,8 +11,12 @@ This guide walks you step-by-step through deploying the full **Self-Healing RAG*
 | **Frontend UI** | [Vercel](https://vercel.com) | Unlimited edge deployments, global CDN, zero cold start | **$0** |
 | **Backend API** | [Render](https://render.com) or [Hugging Face](https://huggingface.co) | 512MB RAM Web Service (Render) or 16GB RAM CPU Space (HF) | **$0** |
 | **PostgreSQL** | [Neon.tech](https://neon.tech) | 0.5 GB Serverless Postgres 16, auto-scaling, pooled URLs | **$0** |
-| **Redis Cache** | [Upstash](https://upstash.com) | Serverless Redis, 10,000 commands/day, TLS enabled | **$0** |
-| **Vector DB** | Embedded ChromaDB | Runs inside Backend container (`./chroma_data`), zero extra servers | **$0** |
+| **Vector DB** | **pgvector** on Neon Postgres | HNSW index on `vector_chunks`, reuses PG (no extra server) | **$0** |
+| **Session Store** | **pg** `session_messages` on Neon | Reuses Postgres, no Redis needed (Upstash optional) | **$0** |
+| **Sparse Retrieval** | **pg tsvector** on Neon | `sparse_chunks` GIN index, no BM25 rebuild | **$0** |
+| **Reranker** | **none** (RRF only) | No 80MB cross-encoder, fits 512M RAM | **$0** |
+| **Graph** | **In-Memory** | No 1Gi Neo4j container | **$0** |
+| **Redis Cache** | [Upstash](https://upstash.com) *(optional)* | Serverless Redis, 10k cmds/day — only if `SESSION_STORE_PROVIDER=redis` | **$0** |
 | **LLM Inference** | [Groq Cloud](https://console.groq.com) | Llama 3.3 70B & 8B, 30 req/min, ~300 tokens/sec | **$0** |
 
 > [!TIP]
@@ -41,11 +45,23 @@ This guide walks you step-by-step through deploying the full **Self-Healing RAG*
 
 ---
 
-## ⚡ Step 3: Create Free Upstash Redis Cache (1 Minute)
+## ⚡ Step 3: Free-Tier Pluggable Stores (No Extra Containers)
+
+**Defaults are $0 with no Redis/Neo4j/Qdrant needed** — all reuse Neon Postgres:
+
+| Store | Free-Tier Default | Paid Alternative |
+|---|---|---|
+| `VECTOR_STORE_PROVIDER` | `pgvector` | `qdrant` (`--profile qdrant`), `pinecone`, `chroma` (`--profile chroma`) |
+| `SESSION_STORE_PROVIDER` | `pg` | `redis` (Upstash) |
+| `SPARSE_PROVIDER` | `pg_tsvector` | `bm25` (in-memory) |
+| `RERANKER_PROVIDER` | `none` | `cross-encoder` |
+| `GRAPH_PROVIDER` | `memory` | `neo4j` (`--profile graph`) |
+
+**Optional Step 3a: Upstash Redis (only if you prefer Redis over Postgres sessions)**
 
 1. Go to [upstash.com](https://upstash.com) and sign up for free.
 2. Click **Create Database** → select region closest to your Neon DB.
-3. Under **Connect Details**, copy the **`REDIS_URL`** (format: `rediss://default:xxxx@yyyy.upstash.io:6379`).
+3. Copy `REDIS_URL` (`rediss://default:xxxx@yyyy.upstash.io:6379`) and set `SESSION_STORE_PROVIDER=redis`.
 
 ---
 
@@ -74,7 +90,12 @@ This guide walks you step-by-step through deploying the full **Self-Healing RAG*
 | `MODEL_NAME` | `llama-3.3-70b-versatile` | Ultra-fast flagship Llama 3.3 |
 | `DATABASE_URL` | `postgresql://user:pwd@ep-xyz.neon.tech/neondb?sslmode=require` | Your Neon connection string |
 | `LANGGRAPH_CHECKPOINT_URI` | `postgresql://user:pwd@ep-xyz.neon.tech/neondb?sslmode=require` | Checkpointer database URI |
-| `REDIS_URL` | `rediss://default:pwd@xyz.upstash.io:6379` | Your Upstash connection string |
+| `VECTOR_STORE_PROVIDER` | `pgvector` | Free-tier pgvector (no extra server) |
+| `SESSION_STORE_PROVIDER` | `pg` | Free-tier Postgres sessions (or `redis` for Upstash) |
+| `SPARSE_PROVIDER` | `pg_tsvector` | Free-tier Postgres tsvector |
+| `RERANKER_PROVIDER` | `none` | Free-tier RRF only (or `cross-encoder`) |
+| `GRAPH_PROVIDER` | `memory` | Free-tier in-memory (or `neo4j`) |
+| `REDIS_URL` | `rediss://default:pwd@xyz.upstash.io:6379` | Only if `SESSION_STORE_PROVIDER=redis` |
 | `CORS_ORIGINS` | `*` | Allows browser calls from Vercel |
 | `JWT_ALGORITHM` | `RS256` | Secure RSA algorithm |
 

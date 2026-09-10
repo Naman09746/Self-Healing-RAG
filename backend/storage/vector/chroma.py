@@ -138,3 +138,21 @@ class ChromaStore:
         except Exception as e:
             logger.error("Failed to delete document chunks", error=str(e), document_id=document_id)
             raise
+
+    # VectorStore protocol compliance
+    def heartbeat(self) -> bool:
+        try:
+            self.client.heartbeat()
+            return True
+        except Exception:
+            return False
+
+    def count(self, tenant_id: Optional[str] = None) -> int:
+        try:
+            where = metadata_filter(resolve_tenant_id(tenant_id))
+            return int(self.collection.count(where=where))  # type: ignore[arg-type]
+        except Exception:
+            try:
+                return int(self.collection.count())  # fallback
+            except Exception:
+                return 0

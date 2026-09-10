@@ -60,13 +60,13 @@ async def delete_document(
     """Delete a document and all its chunks from relational and vector storage."""
     tenant_id = current_user.tenant_id or current_user.user_uuid
     
-    # 1. Delete from ChromaDB
+    # 1. Delete from vector store (provider-agnostic)
     svc = getattr(fastapi_request.app.state, "svc", None)
     if svc and svc.store:
         try:
             svc.store.delete_document(document_id, tenant_id=tenant_id)
         except Exception as e:
-            logger.warning("Failed to delete chunks from ChromaDB", error=str(e), document_id=document_id)
+            logger.warning("Failed to delete chunks from vector store", error=str(e), document_id=document_id)
 
     # 2. Delete from relational DB
     stmt = delete(DBDocument).where(

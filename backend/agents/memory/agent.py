@@ -1,7 +1,6 @@
 from typing import List, Dict, Any
 from backend.core.logging import get_logger
 from backend.agents.generation.llm_client import LLMClient
-from backend.storage.vector.chroma import ChromaStore
 import uuid
 
 logger = get_logger(__name__)
@@ -14,7 +13,9 @@ class MemoryAgent:
     @property
     def memory_store(self):
         if self._memory_store is None:
-            self._memory_store = ChromaStore(collection_name="long_term_memory")
+            from backend.storage.vector.factory import get_vector_store
+
+            self._memory_store = get_vector_store(collection_name="long_term_memory")
         return self._memory_store
 
     def store_insight(self, query: str, solution: str, metadata: dict = None):

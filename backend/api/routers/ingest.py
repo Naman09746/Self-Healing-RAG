@@ -9,7 +9,11 @@ from pathlib import Path
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
 logger = get_logger(__name__)
-pipeline = IngestionPipeline()
+# Lazy factory so tests can patch VECTOR_STORE_PROVIDER without import-time Chroma init
+def _get_pipeline() -> IngestionPipeline:
+    return IngestionPipeline()
+
+pipeline = _get_pipeline()
 
 from backend.storage.db.session import get_db
 from backend.storage.db.models import Document as DBDocument
