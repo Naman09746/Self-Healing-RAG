@@ -212,10 +212,16 @@ async function request<T>(
 
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
+      const detailMsg =
+        typeof errBody.detail === "string"
+          ? errBody.detail
+          : Array.isArray(errBody.detail)
+          ? errBody.detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join(", ")
+          : errBody.message || res.statusText || `Server error (${res.status})`;
       throw new ApiError(
         res.status,
         errBody.code || "UNKNOWN",
-        errBody.message || res.statusText,
+        detailMsg,
         errBody
       );
     }
@@ -336,17 +342,32 @@ export const documents = {
     formData.append("file", file);
 
     const token = getAccessToken();
-    const res = await fetch(`${getBaseUrl()}/ingest`, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
-    });
+    try {
+      const res = await fetch(`${getBaseUrl()}/ingest`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, err.code || "UPLOAD_FAILED", err.message || res.statusText);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const detailMsg =
+          typeof err.detail === "string"
+            ? err.detail
+            : Array.isArray(err.detail)
+            ? err.detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join(", ")
+            : err.message || res.statusText || `Server error (${res.status})`;
+        throw new ApiError(res.status, err.code || "UPLOAD_FAILED", detailMsg, err);
+      }
+      return res.json();
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(
+        0,
+        "NETWORK",
+        (err as Error).message || "Cannot connect to backend server. Make sure the API is running on port 8000."
+      );
     }
-    return res.json();
   },
 
   delete: (id: string) => request<void>("DELETE", `/documents/${id}`),
