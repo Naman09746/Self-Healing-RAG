@@ -1,19 +1,17 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 from backend.core.config import settings
 from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# PostgreSQL is required. No SQLite fallback.
-# Application will fail to start if database is unreachable.
+# NullPool is used for asyncpg with FastAPI/Starlette to prevent
+# "Future attached to a different loop" errors across requests and lifespan background tasks.
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
-    pool_size=5,
-    max_overflow=5,
-    pool_pre_ping=True,
-    pool_recycle=300,
+    poolclass=NullPool,
 )
 
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

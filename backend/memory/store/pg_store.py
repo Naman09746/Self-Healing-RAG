@@ -30,9 +30,10 @@ class PgSessionStore:
 
     def _engine_maker(self):
         if self._engine is None:
+            from sqlalchemy.pool import NullPool
             url = settings.DATABASE_URL
             self._engine = create_async_engine(
-                url, echo=False, pool_size=5, max_overflow=10, pool_pre_ping=True
+                url, echo=False, poolclass=NullPool
             )
             self._maker = sessionmaker(self._engine, class_=AsyncSession, expire_on_commit=False)
             # keep pool attribute truthy for health checks

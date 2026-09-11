@@ -70,14 +70,12 @@ class PgVectorStore:
         except Exception:
             pass
         if self._engine is None:
+            from sqlalchemy.pool import NullPool
             url = settings.DATABASE_URL
             self._engine = create_async_engine(
                 url,
                 echo=False,
-                pool_size=3,
-                max_overflow=5,
-                pool_pre_ping=True,
-                pool_recycle=300,
+                poolclass=NullPool,
             )
             self._sessionmaker = sessionmaker(self._engine, class_=AsyncSession, expire_on_commit=False)
         return self._engine
