@@ -158,3 +158,4 @@ We identified 7 extremely subtle edge cases that break naive RAG systems in prod
 - **Circuit Breaker Routing Logic:** [`backend/graph/edges.py`](file:///Users/namanjoshi/Workplace/Self-Healing-RAG/backend/graph/edges.py)
 - **Edge Cases Test Suite (Integration):** [`backend/tests/integration/test_rag_edge_cases.py`](file:///Users/namanjoshi/Workplace/Self-Healing-RAG/backend/tests/integration/test_rag_edge_cases.py)
 - **Edge Cases Test Suite (Unit/Chunker):** [`backend/tests/unit/test_chunker_edge_cases.py`](file:///Users/namanjoshi/Workplace/Self-Healing-RAG/backend/tests/unit/test_chunker_edge_cases.py)
+- **Evaluation & RAGAS Metrics Master Guide:** [`docs/EVALUATION_INTERVIEW_PREP.md`](file:///Users/namanjoshi/Workplace/Self-Healing-RAG/docs/EVALUATION_INTERVIEW_PREP.md)

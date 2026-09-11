@@ -1,0 +1,182 @@
+[
+  {
+    "id": "v1_01",
+    "type": "general_trivia",
+    "query": "What is the capital of France?",
+    "expected_answer": "The capital of France is Paris.",
+    "contexts": [
+      "France is a country in Western Europe. Its capital is Paris, which is known for its art, fashion, and culture."
+    ]
+  },
+  {
+    "id": "v1_02",
+    "type": "general_trivia",
+    "query": "How does Retrieval Augmented Generation work?",
+    "expected_answer": "RAG works by retrieving relevant documents from a knowledge base and using them as context for a language model to generate answers.",
+    "contexts": [
+      "Retrieval Augmented Generation (RAG) is a technique that combines retrieval from a knowledge base with text generation. It first retrieves relevant documents, then uses them as context for generation."
+    ]
+  },
+  {
+    "id": "v1_03",
+    "type": "general_trivia",
+    "query": "What is the boiling point of water at sea level?",
+    "expected_answer": "The boiling point of water at sea level is 100°C (212°F).",
+    "contexts": [
+      "Water boils at 100 degrees Celsius (212 degrees Fahrenheit) at sea level, though this temperature decreases with increasing altitude."
+    ]
+  },
+  {
+    "id": "v1_04",
+    "type": "general_trivia",
+    "query": "Who wrote Romeo and Juliet?",
+    "expected_answer": "Romeo and Juliet was written by William Shakespeare.",
+    "contexts": [
+      "William Shakespeare was an English playwright and poet who wrote many famous works including Romeo and Juliet, Hamlet, and Macbeth."
+    ]
+  },
+  {
+    "id": "v1_05",
+    "type": "general_trivia",
+    "query": "What is machine learning?",
+    "expected_answer": "Machine learning is a subset of artificial intelligence that enables systems to learn and improve from experience without explicit programming.",
+    "contexts": [
+      "Machine learning is a branch of artificial intelligence that focuses on building systems that learn from data. These systems can improve their performance over time without being explicitly programmed for every scenario."
+    ]
+  },
+  {
+    "id": "v1_06",
+    "type": "general_trivia",
+    "query": "Explain quantum entanglement",
+    "expected_answer": "Quantum entanglement is a physical phenomenon where particles become interconnected and the state of one instantly influences the other regardless of distance.",
+    "contexts": [
+      "Quantum entanglement is a phenomenon in quantum physics where two or more particles become linked and share the same quantum state. Changes to one particle instantly affect the other, even across large distances."
+    ]
+  },
+  {
+    "id": "v1_07",
+    "type": "general_trivia",
+    "query": "What causes the seasons on Earth?",
+    "expected_answer": "The seasons are caused by the tilt of Earth's axis as it orbits the Sun.",
+    "contexts": [
+      "Earth's axial tilt of approximately 23.5 degrees relative to its orbital plane causes the seasons. As Earth orbits the Sun, different hemispheres receive varying amounts of sunlight throughout the year."
+    ]
+  },
+  {
+    "id": "v1_08",
+    "type": "general_trivia",
+    "query": "What is the Python programming language used for?",
+    "expected_answer": "Python is used for web development, data science, artificial intelligence, automation, and many other applications.",
+    "contexts": [
+      "Python is a versatile, high-level programming language widely used in web development, data science, machine learning, artificial intelligence, automation scripting, and scientific computing."
+    ]
+  },
+  {
+    "id": "v1_09",
+    "type": "general_trivia",
+    "query": "Explain the concept of database indexing",
+    "expected_answer": "Database indexing is a data structure technique that improves the speed of data retrieval operations on a database table.",
+    "contexts": [
+      "Database indexing is a technique used to speed up data retrieval in databases. Indexes are data structures that allow the database engine to find rows without scanning the entire table."
+    ]
+  },
+  {
+    "id": "v1_10",
+    "type": "general_trivia",
+    "query": "What is the difference between HTTP and HTTPS?",
+    "expected_answer": "HTTPS is the secure version of HTTP, using SSL/TLS encryption to protect data in transit between client and server.",
+    "contexts": [
+      "HTTPS (Hypertext Transfer Protocol Secure) is an extension of HTTP that uses SSL/TLS encryption to secure data transmission. HTTP sends data in plain text, while HTTPS encrypts it for secure communication."
+    ]
+  },
+  {
+    "id": "v1_11",
+    "type": "general_trivia",
+    "query": "Describe how version control systems work",
+    "expected_answer": "Version control systems track changes to files over time, enabling collaboration, branching, and rollback to previous versions.",
+    "contexts": [
+      "Version control systems (VCS) manage changes to documents, code, and other collections of information. They track modifications, allow branching for parallel development, and enable reverting to earlier versions."
+    ]
+  },
+  {
+    "id": "v1_12",
+    "type": "general_trivia",
+    "query": "What is the function of DNS in networking?",
+    "expected_answer": "DNS (Domain Name System) translates human-readable domain names into IP addresses that computers use to identify each other on the network.",
+    "contexts": [
+      "The Domain Name System (DNS) is like the phonebook of the internet. It translates human-readable domain names like google.com into IP addresses that computers use to locate and communicate with each other."
+    ]
+  },
+  {
+    "id": "v1_13",
+    "type": "general_trivia",
+    "query": "Explain what REST APIs are",
+    "expected_answer": "REST APIs are web service interfaces that follow REST architectural principles, using HTTP methods to perform CRUD operations on resources.",
+    "contexts": [
+      "REST (Representational State Transfer) APIs are a set of web service architectural principles. They use standard HTTP methods like GET, POST, PUT, and DELETE to perform operations on resources represented as JSON or XML."
+    ]
+  },
+  {
+    "id": "v1_14",
+    "type": "general_trivia",
+    "query": "What is the purpose of unit testing?",
+    "expected_answer": "Unit testing validates that individual components of software work correctly in isolation.",
+    "contexts": [
+      "Unit testing is a software testing methodology where individual units or components of source code are tested in isolation to determine whether they function as expected. Developers typically write and maintain these tests."
+    ]
+  },
+  {
+    "id": "v1_15",
+    "type": "general_trivia",
+    "query": "Describe the waterfall methodology in software development",
+    "expected_answer": "Waterfall is a sequential software development process where each phase must be completed before the next begins.",
+    "contexts": [
+      "The waterfall model is a sequential software development methodology where progress flows steadily downward through phases: requirements, design, implementation, testing, deployment, and maintenance."
+    ]
+  },
+  {
+    "id": "v1_16",
+    "type": "general_trivia",
+    "query": "What are containers in DevOps?",
+    "expected_answer": "Containers are lightweight, portable units that package software and dependencies together to run consistently across environments.",
+    "contexts": [
+      "Containers are standardized, executable units that package application code with its dependencies and configuration. They provide consistent environments across development, testing, and production deployments."
+    ]
+  },
+  {
+    "id": "v1_17",
+    "type": "general_trivia",
+    "query": "Explain the concept of microservices architecture",
+    "expected_answer": "Microservices architecture structures an application as a collection of loosely coupled, independently deployable services.",
+    "contexts": [
+      "Microservices architecture is an architectural style that structures an application as a collection of small, autonomous services. Each service is independently deployable, focused on a specific business capability."
+    ]
+  },
+  {
+    "id": "v1_18",
+    "type": "general_trivia",
+    "query": "What is the use of the pandas library in Python?",
+    "expected_answer": "Pandas is a Python library for data manipulation and analysis, providing data structures like DataFrames for working with structured data.",
+    "contexts": [
+      "Pandas is a powerful Python library for data manipulation and analysis. It provides the DataFrame structure for handling tabular data with labeled axes, making it easy to clean, transform, analyze, and visualize data."
+    ]
+  },
+  {
+    "id": "v1_19",
+    "type": "general_trivia",
+    "query": "Explain what a blockchain is",
+    "expected_answer": "A blockchain is a distributed, decentralized ledger that records transactions across a network of computers.",
+    "contexts": [
+      "Blockchain is a distributed ledger technology that maintains a continuously growing list of records, called blocks, secured using cryptography. Each block contains a cryptographic hash of the previous block, creating an immutable chain."
+    ]
+  },
+  {
+    "id": "v1_20",
+    "type": "general_trivia",
+    "query": "What is the purpose of a load balancer?",
+    "expected_answer": "A load balancer distributes incoming network traffic across multiple servers to ensure reliability and performance.",
+    "contexts": [
+      "A load balancer acts as a traffic cop, distributing incoming network requests across multiple servers. This ensures no single server is overwhelmed, improving application availability, reliability, and responsiveness."
+    ]
+  }
+]

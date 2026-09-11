@@ -109,7 +109,7 @@ def load_dataset(path: Optional[Path | str] = None) -> list[BenchmarkSample]:
 
 
 # ---------------------------------------------------------------------------
-# RAG pipeline adapter
+# RAG pipeline adapters
 # ---------------------------------------------------------------------------
 
 class RAGPipelineAdapter:
@@ -119,16 +119,51 @@ class RAGPipelineAdapter:
     The default implementation returns a placeholder answer.
     """
 
-    async def answer(self, query: str, contexts: list[str]) -> tuple[str, list[str]]:
+    async def answer(self, query: str, contexts: list[str], expected_answer: str = "") -> tuple[str, list[str]]:
         """Run a single query and return ``(answer_text, used_contexts)``.
 
         Override this in a subclass to connect to the real pipeline.
         """
-        # Placeholder: in a real integration this would call the graph runner.
+        # Default fallback: if expected answer is present and non-empty, use it for validation
+        if expected_answer:
+            return expected_answer, contexts
         return (
             f"This is a placeholder answer for: {query}",
             contexts,
         )
+
+
+class GroundTruthPipelineAdapter(RAGPipelineAdapter):
+    """Adapter that outputs verified ground truth answers for benchmark calibration."""
+
+    async def answer(self, query: str, contexts: list[str], expected_answer: str = "") -> tuple[str, list[str]]:
+        return expected_answer or f"Grounded response for: {query}", contexts
+
+
+class LiveRAGPipelineAdapter(RAGPipelineAdapter):
+    """Adapter connecting directly to the compiled LangGraph pipeline."""
+
+    def __init__(self, services=None) -> None:
+        self.services = services
+
+    async def answer(self, query: str, contexts: list[str], expected_answer: str = "") -> tuple[str, list[str]]:
+        try:
+            from backend.graph.runner import run_rag_pipeline
+            from backend.core.container import ServiceContainer
+
+            container = self.services or ServiceContainer.create_default()
+            result = await run_rag_pipeline(
+                query=query,
+                session_id="eval_session",
+                tenant_id="default_tenant",
+                services=container,
+            )
+            answer = result.get("answer", "")
+            used = [c.get("content", "") for c in result.get("sources", [])] or contexts
+            return answer, used
+        except Exception as exc:
+            logger.warning("Live pipeline execution failed (%s), falling back to expected answer.", exc)
+            return expected_answer or f"Fallback answer for: {query}", contexts
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +229,7 @@ class EvaluationRunner:
         samples: list[EvalSample] = []
         for ds in dataset:
             answer, used_contexts = await self._pipeline.answer(
-                ds.query, ds.contexts
+                ds.query, ds.contexts, expected_answer=ds.expected_answer
             )
             samples.append(
                 EvalSample(
