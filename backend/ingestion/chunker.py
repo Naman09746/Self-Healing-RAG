@@ -1,4 +1,5 @@
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import List, Optional
 from backend.core.config import settings
@@ -94,6 +95,88 @@ def _split_text_recursively(
     return chunks
 
 
+def _split_code_block_smartly(code_block: str, chunk_size: int) -> List[str]:
+    """Bisect oversized code block line-by-line while injecting fences at split points."""
+    lines = code_block.split("\n")
+    header = lines[0] if lines else "```"
+    if not header.startswith("```"):
+        header = "```"
+    
+    # Body lines (excluding first line and last line ```)
+    body_lines = lines[1:-1] if len(lines) >= 2 and lines[-1].strip() == "```" else lines[1:]
+
+    slices: List[str] = []
+    cur_lines: List[str] = []
+    cur_overhead = len(header) + len("\n```") + 2  # newline overhead
+
+    for line in body_lines:
+        line_len = len(line) + 1
+        if cur_lines and (cur_overhead + sum(len(l) + 1 for l in cur_lines) + line_len > chunk_size):
+            slice_content = "\n".join(cur_lines)
+            slices.append(f"{header}\n{slice_content}\n```")
+            cur_lines = [line]
+        else:
+            cur_lines.append(line)
+
+    if cur_lines:
+        slice_content = "\n".join(cur_lines)
+        slices.append(f"{header}\n{slice_content}\n```")
+
+    return slices or [code_block]
+
+
+def _split_markdown_aware(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
+    """Split markdown text while preserving code block and JSON fence integrity."""
+    if not text:
+        return []
+    
+    if "```" not in text:
+        return _split_text_recursively(text, chunk_size, chunk_overlap)
+
+    pattern = re.compile(r'(```[\s\S]*?```)')
+    parts = pattern.split(text)
+
+    atomic_units: List[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if part.startswith("```") and part.endswith("```") and len(part) >= 6:
+            if len(part) <= chunk_size:
+                atomic_units.append(part)
+            else:
+                # Oversized code block -> smart line bisection with injected fences
+                atomic_units.extend(_split_code_block_smartly(part, chunk_size))
+        else:
+            trimmed = part.strip()
+            if not trimmed:
+                continue
+            if len(trimmed) <= chunk_size:
+                atomic_units.append(trimmed)
+            else:
+                atomic_units.extend(_split_text_recursively(trimmed, chunk_size, chunk_overlap))
+
+    # Pack atomic units into chunks
+    packed_chunks: List[str] = []
+    cur_pack: List[str] = []
+    cur_pack_len = 0
+
+    for unit in atomic_units:
+        unit_len = len(unit)
+        sep_len = 2 if cur_pack else 0
+        if cur_pack and (cur_pack_len + sep_len + unit_len > chunk_size):
+            packed_chunks.append("\n\n".join(cur_pack))
+            cur_pack = [unit]
+            cur_pack_len = unit_len
+        else:
+            cur_pack.append(unit)
+            cur_pack_len += sep_len + unit_len
+
+    if cur_pack:
+        packed_chunks.append("\n\n".join(cur_pack))
+
+    return packed_chunks
+
+
 class Chunker:
     """Splits documents into chunks with deterministic, content-addressed IDs.
 
@@ -124,7 +207,7 @@ class Chunker:
             A list of ``Chunk`` objects, each containing a SHA-256-based
             ``chunk_id`` and the chunk ``text``.
         """
-        raw_chunks = _split_text_recursively(
+        raw_chunks = _split_markdown_aware(
             text=text,
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
