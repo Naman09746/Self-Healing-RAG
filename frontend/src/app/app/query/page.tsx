@@ -299,6 +299,19 @@ interface UploadQueueItem {
     <div className="relative flex-1 flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
       {/* ── Drag & Drop Full-Page Overlay — permanently mounted in DOM, smooth CSS opacity transition ── */}
       <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          zoneDragHandlers.onDrop(e);
+        }}
         className={`absolute inset-0 z-50 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md flex flex-col items-center justify-center p-6 transition-all duration-200 cursor-copy ${
           isDragging
             ? "opacity-100 pointer-events-auto visible"

@@ -73,7 +73,7 @@ export function useDragDrop(options: DragDropOptions) {
     }
 
     const { multiple = true, maxFiles = 10, maxSizeBytes = 50 * 1024 * 1024 } = optionsRef.current;
-    let files = rawFiles.filter((f) => f && f.size > 0 && !f.name.startsWith("."));
+    let files = rawFiles.filter((f) => f && !f.name.startsWith("."));
     
     if (maxSizeBytes) {
       files = files.filter((f) => f.size <= maxSizeBytes);
