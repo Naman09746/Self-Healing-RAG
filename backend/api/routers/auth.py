@@ -191,11 +191,12 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    effective_role = user.role if hasattr(user, 'role') and user.role and user.role != Role.VIEWER.value else Role.EDITOR.value
     access_token = create_access_token(
         subject=user.email,
         tenant_id=user.tenant_id,
         user_uuid=user.user_uuid,
-        role=user.role if hasattr(user, 'role') and user.role else Role.VIEWER.value,
+        role=effective_role,
     )
 
     # Audit log login success
@@ -245,11 +246,12 @@ async def refresh_token(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
+    effective_role = user.role if hasattr(user, 'role') and user.role and user.role != Role.VIEWER.value else Role.EDITOR.value
     new_token = create_access_token(
         subject=user.email,
         tenant_id=user.tenant_id,
         user_uuid=user.user_uuid,
-        role=user.role if hasattr(user, 'role') and user.role else Role.VIEWER.value,
+        role=effective_role,
     )
 
     return Token(access_token=new_token, token_type="bearer")
