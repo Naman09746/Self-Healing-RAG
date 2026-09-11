@@ -60,20 +60,38 @@ class PgVectorStore:
         self._ensured = False
 
     def _get_engine(self):
+        # Reuse shared engine from db.session to avoid 30-connection explosion (Neon free tier =10)
+        if self._engine is not None:
+            return self._engine
+        try:
+            from backend.storage.db.session import engine as shared_engine
+            self._engine = shared_engine
+            return self._engine
+        except Exception:
+            pass
         if self._engine is None:
-            # Reuse settings.DATABASE_URL; use async engine
             url = settings.DATABASE_URL
             self._engine = create_async_engine(
                 url,
                 echo=False,
-                pool_size=5,
-                max_overflow=10,
+                pool_size=3,
+                max_overflow=5,
                 pool_pre_ping=True,
+                pool_recycle=300,
             )
             self._sessionmaker = sessionmaker(self._engine, class_=AsyncSession, expire_on_commit=False)
         return self._engine
 
     def _get_sessionmaker(self):
+        if self._sessionmaker is not None:
+            return self._sessionmaker
+        try:
+            from backend.storage.db.session import AsyncSessionLocal as shared_maker, engine as shared_engine
+            self._engine = shared_engine
+            self._sessionmaker = shared_maker
+            return self._sessionmaker
+        except Exception:
+            pass
         if self._sessionmaker is None:
             self._get_engine()
         return self._sessionmaker
@@ -81,17 +99,13 @@ class PgVectorStore:
     async def _ensure_table(self):
         if self._ensured:
             return
-        # Best-effort create extension + table. Failures are logged but not raised (migration is authoritative).
         try:
             eng = self._get_engine()
             async with eng.begin() as conn:
-                # Try to enable pgvector — ignore if not permitted (Neon requires dashboard toggle)
                 try:
                     await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 except Exception as e:
                     logger.warning("Could not CREATE EXTENSION vector (may need manual enable on Neon/RDS)", error=str(e))
-                # Create table if not exists with generic vector type
-                # Use text column for embedding as fallback if vector type unavailable — handled via try
                 await conn.execute(
                     text(
                         f"""
@@ -109,13 +123,11 @@ class PgVectorStore:
                         """
                     )
                 )
-                # Indexes — best effort
                 try:
                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tenant ON {self.table}(tenant_id)"))
                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_doc ON {self.table}(document_id)"))
                 except Exception as e:
                     logger.warning("Could not create pgvector indexes", error=str(e))
-                # HNSW index — may fail if pgvector not enabled or data empty
                 try:
                     await conn.execute(
                         text(
@@ -130,10 +142,10 @@ class PgVectorStore:
             self._ensured = True
 
     # ------------------------------------------------------------------
-    # Sync wrappers — ChromaStore is sync; keep same call style for HybridRetriever asyncio.to_thread
+    # Sync & Async execution helpers
     # ------------------------------------------------------------------
     def _run_sync(self, coro):
-        """Run an async coro from sync context, handling both no-loop and running-loop cases."""
+        """Run an async coro from sync context safely."""
         import asyncio
         import concurrent.futures
 
@@ -142,14 +154,16 @@ class PgVectorStore:
         except RuntimeError:
             return asyncio.run(coro)
         if loop.is_running():
-            # Already in a running loop (e.g. IngestionPipeline async context) — offload to a new thread
+            # If called inside an existing event loop from synchronous code
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(asyncio.run, coro)
-                return future.result()
+                return pool.submit(asyncio.run, coro).result()
         return asyncio.run(coro)
 
     def add_chunks(self, chunks: list[str], metadatas: list[dict[str, Any]], ids: list[str], tenant_id: str | None = None):
         return self._run_sync(self._add_chunks_async(chunks, metadatas, ids, tenant_id))
+
+    async def add_chunks_async(self, chunks: list[str], metadatas: list[dict[str, Any]], ids: list[str], tenant_id: str | None = None):
+        return await self._add_chunks_async(chunks, metadatas, ids, tenant_id)
 
     async def _add_chunks_async(self, chunks: list[str], metadatas: list[dict[str, Any]], ids: list[str], tenant_id: str | None = None):
         if not chunks:
@@ -173,26 +187,28 @@ class PgVectorStore:
         except Exception as e:
             logger.error("Embedding generation failed for pgvector add_chunks", error=str(e))
             raise
-        # Validate dim
+        # Validate dim — fail-closed if strict
         if embeddings and len(embeddings[0]) != self.dim:
-            logger.warning("Embedding dim mismatch for pgvector", expected=self.dim, got=len(embeddings[0]))
-            # If mismatch, we still store but log; truncation/padding could be done but we warn
+            msg = f"Embedding dim mismatch for pgvector: expected {self.dim} got {len(embeddings[0])} (model {self._embed.model})"
+            if getattr(settings, "EMBEDDING_STRICT_DIM", True):
+                logger.error(msg)
+                raise RuntimeError(msg + " — fix VECTOR_STORE_DIM or EMBEDDING_MODEL")
+            logger.warning(msg)
         sess_maker = self._get_sessionmaker()
         async with sess_maker() as session:
             for i, (content, emb, meta, cid) in enumerate(zip(chunks, embeddings, enriched, ids)):
                 document_id = str(meta.get("document_id", ""))
                 chunk_index = int(meta.get("chunk_index", i))
                 chunk_id = str(meta.get("chunk_id", cid))
-                # metadata JSON — ensure serializable
                 meta_json = json.dumps(meta, default=str)
-                # Store embedding as string "[0.1,0.2,...]" for pgvector
                 emb_str = "[" + ",".join(str(float(x)) for x in emb) + "]"
-                # Use ON CONFLICT for idempotency
+                # Use standard SQL CAST(:embedding AS vector) and CAST(:metadata AS jsonb)
+                # to avoid SQLAlchemy colon-parsing conflicts with PostgreSQL :: operator
                 await session.execute(
                     text(
                         f"""
                         INSERT INTO {self.table} (id, tenant_id, document_id, chunk_id, chunk_index, content, embedding, metadata)
-                        VALUES (:id, :tid, :doc_id, :chunk_id, :chunk_index, :content, :embedding::vector, :metadata::jsonb)
+                        VALUES (:id, :tid, :doc_id, :chunk_id, :chunk_index, :content, CAST(:embedding AS vector), CAST(:metadata AS jsonb))
                         ON CONFLICT (id) DO UPDATE SET
                             tenant_id = EXCLUDED.tenant_id,
                             document_id = EXCLUDED.document_id,
@@ -220,6 +236,9 @@ class PgVectorStore:
     def query(self, query_text: str, n_results: int = 5, tenant_id: str | None = None) -> dict[str, Any]:
         return self._run_sync(self._query_async(query_text, n_results, tenant_id))
 
+    async def query_async(self, query_text: str, n_results: int = 5, tenant_id: str | None = None) -> dict[str, Any]:
+        return await self._query_async(query_text, n_results, tenant_id)
+
     async def _query_async(self, query_text: str, n_results: int = 5, tenant_id: str | None = None) -> dict[str, Any]:
         tid = resolve_tenant_id(tenant_id)
         await self._ensure_table()
@@ -233,7 +252,6 @@ class PgVectorStore:
         sess_maker = self._get_sessionmaker()
         try:
             async with sess_maker() as session:
-                # Set ef_search for better recall
                 try:
                     await session.execute(text(f"SET hnsw.ef_search = {int(self.ef_search)}"))
                 except Exception:
@@ -245,14 +263,14 @@ class PgVectorStore:
                     where_clause += " AND metadata->>'collection_name' = :col_name"
                     params["col_name"] = self.collection_name
 
-                # Cosine distance: embedding <=> query, smaller is more similar.
+                # Use CAST(:q_emb AS vector) for robust asyncpg/SQLAlchemy compilation
                 result = await session.execute(
                     text(
                         f"""
-                        SELECT id, content, metadata, embedding <=> :q_emb::vector AS distance
+                        SELECT id, content, metadata, embedding <=> CAST(:q_emb AS vector) AS distance
                         FROM {self.table}
                         {where_clause}
-                        ORDER BY embedding <=> :q_emb::vector
+                        ORDER BY embedding <=> CAST(:q_emb AS vector)
                         LIMIT :k
                         """
                     ),
@@ -265,7 +283,6 @@ class PgVectorStore:
                 ids: list[str] = []
                 for r in rows:
                     _id, content, metadata, distance = r
-                    # metadata may be dict or string
                     if isinstance(metadata, str):
                         try:
                             metadata = json.loads(metadata)
@@ -281,11 +298,13 @@ class PgVectorStore:
                 return {"documents": [docs], "metadatas": [metas], "distances": [distances], "ids": [ids]}
         except Exception as e:
             logger.error("pgvector query failed", error=str(e), query=query_text[:60])
-            # Return empty Chroma-compatible dict on failure to keep HybridRetriever resilient
             return {"documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]]}
 
     def delete_document(self, document_id: str, tenant_id: str | None = None):
         return self._run_sync(self._delete_async(document_id, tenant_id))
+
+    async def delete_document_async(self, document_id: str, tenant_id: str | None = None):
+        return await self._delete_async(document_id, tenant_id)
 
     async def _delete_async(self, document_id: str, tenant_id: str | None = None):
         tid = resolve_tenant_id(tenant_id)
@@ -305,6 +324,9 @@ class PgVectorStore:
         except Exception:
             return False
 
+    async def heartbeat_async(self) -> bool:
+        return await self._heartbeat_async()
+
     async def _heartbeat_async(self) -> bool:
         try:
             await self._ensure_table()
@@ -321,6 +343,9 @@ class PgVectorStore:
             return self._run_sync(self._count_async(tenant_id))
         except Exception:
             return 0
+
+    async def count_async(self, tenant_id: str | None = None) -> int:
+        return await self._count_async(tenant_id)
 
     async def _count_async(self, tenant_id: str | None = None) -> int:
         tid = resolve_tenant_id(tenant_id)

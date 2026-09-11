@@ -171,6 +171,11 @@ class Settings(BaseSettings):
     GROUNDING_THRESHOLD: float = 0.5
     MAX_HISTORY_TURNS: int = 5
 
+    # Embedding Hardening (Phase 0.3) — fail-closed in prod
+    EMBEDDING_STRICT_DIM: bool = Field(default=True, description="If True, raise on embedding dim mismatch instead of warning.")
+    EMBEDDING_FALLBACK_ENABLED: bool = Field(default=True, description="If False, hash fallback is disabled and embedding failures raise. Production should set False; tests/offline set True.")
+    GRAPH_EXTRACTION_ENABLED: bool = Field(default=False, description="If True, ingestion extracts graph entities via LLM. Disabled by default to avoid 8s ingest latency; enable for graph RAG.")
+
     # LangGraph Checkpointer
     LANGGRAPH_CHECKPOINT_URI: str = Field(
         default="",
@@ -262,6 +267,9 @@ class Settings(BaseSettings):
         description="Number of rotated audit log files to retain.",
     )
 
+    # Environment
+    ENV: str = Field(default="development", description="Environment: development | production | test")
+
     # OpenTelemetry (Phase 4C)
     OTEL_EXPORTER_OTLP_ENDPOINT: str = Field(
         default="",
@@ -269,8 +277,8 @@ class Settings(BaseSettings):
                     "Example: http://localhost:4318. Leave empty to use console exporter."
     )
     OTEL_CONSOLE_EXPORT: bool = Field(
-        default=True,
-        description="If True, also export traces to console (useful for development)."
+        default=False,
+        description="If True, also export traces to console (useful for development). Production should be False to avoid log spam and latency."
     )
     OTEL_SERVICE_NAME: str = Field(
         default="self-healing-rag",

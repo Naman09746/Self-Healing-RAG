@@ -40,17 +40,25 @@ class AuditMiddleware(BaseHTTPMiddleware):
         start_time = time.monotonic()
         client_ip = request.client.host if request.client else "unknown"
 
-        # Try to extract user UUID from JWT
-        user_uuid: Optional[str] = None
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            try:
-                from backend.core.security import decode_access_token
-                payload = decode_access_token(token)
-                user_uuid = payload.get("user_uuid")
-            except Exception:
-                pass
+        # Try to extract user UUID from JWT — use cached decode and request.state if available
+        user_uuid: Optional[str] = getattr(request.state, "user_uuid", None)
+        if not user_uuid:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                # Prefer cached payload from rate_limit middleware
+                payload = getattr(request.state, "jwt_payload", None)
+                if payload:
+                    user_uuid = payload.get("user_uuid")
+                else:
+                    token = auth_header[7:]
+                    try:
+                        from backend.core.security import cached_decode_access_token
+                        payload = cached_decode_access_token(token)
+                        user_uuid = payload.get("user_uuid")
+                        request.state.user_uuid = user_uuid
+                        request.state.jwt_payload = payload
+                    except Exception:
+                        pass
 
         # Process request
         response = await call_next(request)

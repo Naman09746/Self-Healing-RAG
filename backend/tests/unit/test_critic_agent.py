@@ -318,4 +318,6 @@ class TestFastPathGrounding:
             context_chunks=["Context"],
         )
         assert result["verification_mode"] == "fast_pass_fallback"
-        assert result["is_hallucinated"] is False
+        assert result["is_hallucinated"] is True
+        assert result["grounding_score"] == 0.0
+        assert result["healing_target"] == "targeted_healing"

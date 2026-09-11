@@ -35,11 +35,13 @@ export function DocumentVault() {
         await upload(file);
         successCount++;
       } catch (err) {
-        toast.error(`Failed to ingest "${file.name}": ${(err as Error).message}`);
+        const raw = (err as Error).message || "Upload failed";
+        const clean = raw.length > 120 ? `${raw.slice(0, 117)}...` : raw;
+        toast.error(`Failed to ingest "${file.name}": ${clean}`);
       }
     }
     if (successCount > 0) {
-      toast.success(`Successfully ingested and indexed ${successCount} document${successCount > 1 ? "s" : ""}.`);
+      toast.success(`Successfully indexed ${successCount} document${successCount > 1 ? "s" : ""} into vector & sparse storage.`);
     }
   };
 

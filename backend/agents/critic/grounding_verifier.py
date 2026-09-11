@@ -20,7 +20,8 @@ from backend.agents.critic.verdict import Verdict, ClaimVerdict
 logger = get_logger(__name__)
 
 # Maximum concurrent LLM calls — protects Ollama from queue overload and memory spikes
-_PARALLELISM = 2
+# Increased from 2 to 5 to reduce tail latency for 6-claim verification (3x speedup)
+_PARALLELISM = 5
 _semaphore = asyncio.Semaphore(_PARALLELISM)
 
 # ── prompt template (one per claim) ─────────────────────────────────────
@@ -72,6 +73,8 @@ class GroundingVerifier:
 
     def __init__(self, model: str = None):
         self.client = LLMClient(model=model)
+        # Instance semaphore allows per-verifier control; falls back to global
+        self._semaphore = _semaphore
 
     # ── parallel entry point (Phase 3B) ──────────────────────────────
 
@@ -104,7 +107,8 @@ class GroundingVerifier:
                 span.set_status(trace.Status(trace.StatusCode.OK))
                 return []
 
-            context = "\n\n".join(context_chunks[:3])  # top 3 chunks
+            # Use up to 6 chunks to match generation context (rerank_top_k=6 for k=10)
+            context = "\n\n".join(context_chunks[:6])
             span.set_attribute("context_length", len(context))
 
             # Optimization: for multiple claims, attempt single-call batch verification first
@@ -199,7 +203,7 @@ class GroundingVerifier:
     ) -> ClaimVerdict:
         """Verify a single claim against context — wrapped in semaphore."""
         tracer = get_tracer()
-        async with _semaphore:
+        async with self._semaphore:
             with tracer.start_as_current_span("verify_single_claim") as span:
                 span.set_attribute("claim", claim[:150])
                 span.set_attribute("context_length", len(context))
@@ -225,12 +229,13 @@ class GroundingVerifier:
 
     async def verify_claim(self, claim: str, context_chunks: List[str]) -> Dict[str, Any]:
         """Backward-compatible single-claim verify — returns raw dict."""
-        context = "\n\n".join(context_chunks[:3])
+        context = "\n\n".join(context_chunks[:6])
         cv = await self._verify_single_claim(claim, context)
         return {"verdict": cv.verdict.value, "reasoning": cv.reasoning}
 
     async def verify_claims_batch(self, claims: List[str], context_chunks: List[str]) -> List[Dict[str, Any]]:
         """Backward-compatible batch verify — delegates to parallel entry point."""
+        # Ensure context truncation consistent with parallel path
         cvs = await self.verify_claims_parallel(claims, context_chunks)
         return [
             {"verdict": cv.verdict.value, "reasoning": cv.reasoning}

@@ -100,25 +100,41 @@ class HybridRetriever:
                 vs_span.set_attribute("engine", self.vector_engine)
                 vs_span.set_attribute("sparse_provider", getattr(settings, "SPARSE_PROVIDER", "pg_tsvector"))
                 vs_span.set_attribute("n_results", k * 2)
-                # Tenant-aware sparse retrieve: try with tenant_id, fallback to legacy signature
-                def _sparse_retrieve():
-                    try:
-                        return self.bm25.retrieve(query, k=k*2, tenant_id=tid)  # type: ignore[call-arg]
-                    except TypeError:
-                        return self.bm25.retrieve(query, k=k*2)  # legacy
+
+                async def _dense_retrieve() -> Dict[str, Any]:
+                    if hasattr(self.chroma, "query_async"):
+                        return await self.chroma.query_async(query, n_results=k * 2, tenant_id=tid)
+                    return await asyncio.to_thread(self.chroma.query, query, n_results=k * 2, tenant_id=tid)
+
+                async def _sparse_retrieve() -> List[Dict[str, Any]]:
+                    if hasattr(self.bm25, "retrieve_async"):
+                        try:
+                            return await self.bm25.retrieve_async(query, k=k * 2, tenant_id=tid)
+                        except TypeError:
+                            return await self.bm25.retrieve_async(query, k=k * 2)
+                    def _sync():
+                        try:
+                            return self.bm25.retrieve(query, k=k * 2, tenant_id=tid)
+                        except TypeError:
+                            return self.bm25.retrieve(query, k=k * 2)
+                    return await asyncio.to_thread(_sync)
 
                 chroma_raw, sparse_results, graph_results = await asyncio.gather(
-                    asyncio.to_thread(self.chroma.query, query, n_results=k*2, tenant_id=tid),
-                    asyncio.to_thread(_sparse_retrieve),
+                    _dense_retrieve(),
+                    _sparse_retrieve(),
                     _safe_graph_retrieve(),
                 )
                 vs_span.set_attribute("result_count", len(chroma_raw.get("documents", [[]])[0]) if chroma_raw.get("documents") else 0)
 
             # Parse Dense Retrieval (provider-agnostic: all stores return Chroma-compatible dict)
             vector_results = []
+            distances0 = []
             if isinstance(chroma_raw, dict) and chroma_raw.get("documents") and chroma_raw["documents"]:
                 docs0 = chroma_raw["documents"][0] if chroma_raw["documents"] else []
                 metas0 = chroma_raw["metadatas"][0] if chroma_raw.get("metadatas") and chroma_raw["metadatas"] else [{} for _ in docs0]
+                distances0 = chroma_raw.get("distances", [[]])[0] if chroma_raw.get("distances") else [None for _ in docs0]
+                if len(distances0) < len(docs0):
+                    distances0 = list(distances0) + [None] * (len(docs0) - len(distances0))
                 for i in range(len(docs0)):
                     raw_meta = metas0[i] if i < len(metas0) and isinstance(metas0[i], dict) else {}
                     metadata = {
@@ -128,10 +144,16 @@ class HybridRetriever:
                         **{k: v for k, v in raw_meta.items()
                            if k not in (METADATA_TENANT_KEY, METADATA_DOCUMENT_KEY, METADATA_CHUNK_KEY)},
                     }
+                    dist = distances0[i] if i < len(distances0) else None
+                    try:
+                        dist_f = float(dist) if dist is not None else None
+                    except Exception:
+                        dist_f = None
                     vector_results.append({
                         "content": docs0[i],
                         "metadata": metadata,
                         "chunk_id": metadata.get(METADATA_CHUNK_KEY, ""),
+                        "distance": dist_f,
                     })
 
             # 4. Reciprocal Rank Fusion (RRF)
@@ -146,8 +168,14 @@ class HybridRetriever:
                                 "score": 0.0,
                                 "metadata": res.get("metadata", {}),
                                 "chunk_id": res.get("chunk_id", ""),
+                                "distance": res.get("distance", None),
                             }
                         fused_scores[content]["score"] += weight * (1.0 / (self.rrf_k + rank + 1))
+                        d = res.get("distance", None)
+                        if d is not None:
+                            cur = fused_scores[content].get("distance")
+                            if cur is None or d < cur:
+                                fused_scores[content]["distance"] = d
 
                 update_scores(vector_results, weight=1.0)
                 update_scores(sparse_results, weight=1.0)
@@ -187,6 +215,7 @@ class HybridRetriever:
                             "score": 1.0 / (self.rrf_k + rank + 1),
                             "metadata": entry["metadata"],
                             "chunk_id": entry["chunk_id"],
+                            "distance": None,
                         }
                 # Re-sort after adding graph entries
                 final_results = sorted(
@@ -216,8 +245,12 @@ class HybridRetriever:
 
     def _retrieve_from_graph(self, query: str) -> List[str]:
         """Extract entities from query and traverse relationships in a single batched Cypher query."""
-        if not self.graph or not getattr(self.graph, "_driver", None):
+        if not self.graph or not hasattr(self.graph, "query_graph"):
             return []
+        if getattr(self.graph, "_driver", None) is None and self.graph.__class__.__name__ not in ("InMemoryGraphStore",):
+            provider = getattr(settings, "GRAPH_PROVIDER", "memory") or "memory"
+            if provider.lower() != "memory":
+                return []
 
         tracer = get_tracer()
         with tracer.start_as_current_span("graph_search") as span:

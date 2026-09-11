@@ -21,6 +21,12 @@ class QueryRequest(BaseModel):
     session_id: Optional[str] = None
 
 
+class RetrievedChunkResponse(BaseModel):
+    chunk_id: str = ""
+    content: str = ""
+    score: float = 0.0
+    source: str = ""
+
 class QueryResponse(BaseModel):
     query: str
     answer: str
@@ -32,6 +38,9 @@ class QueryResponse(BaseModel):
     complexity_score: Optional[float] = 0.0
     verification_mode: Optional[str] = ""
     is_hallucinated: Optional[bool] = False
+    sources: Optional[list[RetrievedChunkResponse]] = None
+    phase_timings: Optional[dict[str, float]] = None
+    healing_actions: Optional[list[str]] = None
 
 
 @router.post("", response_model=QueryResponse)
@@ -97,6 +106,8 @@ async def query_rag(
             complexity_score=result.get("complexity_score", 0.0),
             verification_mode=result.get("verification_mode", ""),
             is_hallucinated=result.get("is_hallucinated", False),
+            sources=result.get("sources"),
+            phase_timings={"total_ms": round(latency_ms, 2)},
         )
     except Exception as e:
         logger.error("Query failed", error=str(e), user_uuid=current_user.user_uuid)

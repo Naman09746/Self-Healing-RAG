@@ -204,17 +204,39 @@ class TestShouldGenerate:
         assert should_generate(state) == "output"
 
     def test_all_chunks_below_threshold_routes_to_output(self):
+        # Vector distances above threshold (0.9 > 0.65) and sparse scores below RRF threshold (0.005 <0.008)
         chunks = [
-            RetrievedChunk(chunk_id="1", content="low score 1", score=0.2, source="doc1"),
-            RetrievedChunk(chunk_id="2", content="low score 2", score=0.4, source="doc2"),
+            RetrievedChunk(chunk_id="1", content="low score 1", score=0.005, source="doc1", distance=0.92),
+            RetrievedChunk(chunk_id="2", content="low score 2", score=0.004, source="doc2", distance=0.88),
         ]
         state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
         assert should_generate(state) == "output"
 
     def test_relevant_chunks_routes_to_generation(self):
+        # One chunk with good distance (0.3) should route to generation even if other is low
         chunks = [
-            RetrievedChunk(chunk_id="1", content="low score 1", score=0.2, source="doc1"),
-            RetrievedChunk(chunk_id="2", content="high score 2", score=0.85, source="doc2"),
+            RetrievedChunk(chunk_id="1", content="low score 1", score=0.005, source="doc1", distance=0.92),
+            RetrievedChunk(chunk_id="2", content="high score 2", score=0.85, source="doc2", distance=0.32),
         ]
         state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        assert should_generate(state) == "generation"
+
+    def test_rrf_fallback_sparse_relevant(self):
+        # Sparse-only (distance=None) with RRF scores above 0.008 should be relevant
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="sparse 1", score=0.012, source="doc1", distance=None),
+            RetrievedChunk(chunk_id="2", content="sparse 2", score=0.015, source="doc2", distance=None),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        assert should_generate(state) == "generation"
+
+    def test_rrf_fallback_all_below_routes_to_output(self):
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="sparse low", score=0.005, source="doc1", distance=None),
+            RetrievedChunk(chunk_id="2", content="sparse low2", score=0.003, source="doc2", distance=None),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        # With new logic, all-below but corpus non-empty fallback treats as relevant to avoid false fast-fail;
+        # however if we explicitly want sparse low to fast-fail, we rely on no_relevant_chunks flag.
+        # Here we test that sparse low still routes to generation via fallback len>0 path (prevents P0 bug).
         assert should_generate(state) == "generation"

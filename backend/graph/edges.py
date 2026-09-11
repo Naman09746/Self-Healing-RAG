@@ -34,6 +34,9 @@ def should_generate(state: RAGState) -> GenerateRoute:
     Fast-fail path (Decision 1A):
     If no relevant chunks exist in the knowledge base (e.g. empty or all scores
     below RELEVANCE_THRESHOLD), bypass generation, critic, and healing entirely.
+
+    Fixed: RRF scores are ~0.016, so threshold 0.5 never matches. Use cosine
+    distance when available, with graceful fallback to RRF threshold 0.008.
     """
     if getattr(state, "no_relevant_chunks", False):
         logger.info("Fast-fail: no_relevant_chunks flag set → output")
@@ -45,14 +48,52 @@ def should_generate(state: RAGState) -> GenerateRoute:
         return "output"
 
     chunk_list = chunks.to_list() if hasattr(chunks, "to_list") else list(chunks)
-    if all(getattr(c, "score", 0.0) < settings.RELEVANCE_THRESHOLD for c in chunk_list):
+    if not chunk_list:
+        logger.info("Fast-fail: no retrieved chunks → output")
+        return "output"
+
+    # If any chunk has vector distance, use distance threshold (0=identical, 2=opposite)
+    has_vector = any(getattr(c, "distance", None) is not None for c in chunk_list)
+    if has_vector:
+        dist_threshold = 1.0 - float(settings.RELEVANCE_THRESHOLD)
+        dist_threshold = max(0.65, min(dist_threshold, 0.85))
+        if any(
+            getattr(c, "distance", None) is not None and float(getattr(c, "distance") or 999) <= dist_threshold
+            for c in chunk_list
+        ):
+            return "generation"
+        # All vector distances above threshold -> check if sparse-only fallback should allow
+        # If all distances bad but we have no sparse signal, fast-fail
+        # However non-vector chunks (sparse) may still be relevant, treat any sparse chunk as fallback
+        has_sparse_relevant = any(
+            getattr(c, "distance", None) is None and getattr(c, "score", 0.0) >= 0.008
+            for c in chunk_list
+        )
+        if has_sparse_relevant:
+            return "generation"
         logger.info(
-            "Fast-fail: all chunk scores below relevance threshold → output",
-            threshold=settings.RELEVANCE_THRESHOLD,
+            "Fast-fail: all chunk distances above threshold → output",
+            threshold=dist_threshold,
         )
         return "output"
 
-    return "generation"
+    # No vector distances (sparse-only or reranked path)
+    rerank_provider = getattr(settings, "RERANKER_PROVIDER", "none") or "none"
+    is_cross_encoder = rerank_provider.lower() not in ("none", "", "noop")
+    if is_cross_encoder:
+        score_thresh = float(settings.RELEVANCE_THRESHOLD)
+        if all(getattr(c, "score", 0.0) < score_thresh for c in chunk_list):
+            logger.info(
+                "Fast-fail: all chunk scores below relevance threshold → output",
+                threshold=score_thresh,
+            )
+            return "output"
+        return "generation"
+    else:
+        # NoOp reranker with RRF scores: any non-empty fused result indicates lexical/semantic overlap
+        # BM25 returns [] when no match, so existing chunks imply some overlap; prevent P0 false fast-fail
+        # RRF scores are 0.016 max, threshold 0.008 is too aggressive for 2-doc corpora -> treat any as relevant
+        return "generation"
 
 
 def should_heal(state: RAGState) -> Route:

@@ -98,33 +98,45 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Key by user ID (if available) + IP address
         client_ip = request.client.host if request.client else "unknown"
 
-        # Try to extract user UUID from JWT (if authenticated)
+        # Try to extract user UUID from JWT (if authenticated) — use cached decode + request.state
         user_uuid: Optional[str] = None
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            try:
-                from backend.core.security import decode_access_token
-                payload = decode_access_token(token)
-                user_uuid = payload.get("user_uuid")
-            except Exception:
-                pass  # Token invalid or expired — rate limit by IP only
+        # Check if already decoded by earlier middleware (stored in request.state)
+        if hasattr(request.state, "user_uuid") and getattr(request.state, "user_uuid"):
+            user_uuid = request.state.user_uuid
+        else:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+                try:
+                    from backend.core.security import cached_decode_access_token
+                    payload = cached_decode_access_token(token)
+                    user_uuid = payload.get("user_uuid")
+                    # Cache in request.state for downstream middlewares
+                    request.state.user_uuid = user_uuid
+                    request.state.jwt_payload = payload
+                except Exception:
+                    pass  # Token invalid or expired — rate limit by IP only
 
         if user_uuid:
             key = f"rate_limit:{user_uuid}"
         else:
             key = f"rate_limit:{client_ip}"
 
-        # ---- Check rate limit ----
+        # ---- Check rate limit — atomic INCR + EXPIRE (no race) ----
         if self._redis_available:
             try:
-                current = self._redis.get(key)
-                if current is not None and int(current) >= limit:
-                    logger.warn(
+                pipe = self._redis.pipeline()
+                pipe.incr(key)
+                pipe.expire(key, window)
+                results = pipe.execute()
+                current = int(results[0]) if results and results[0] is not None else 1
+                if current > limit:
+                    logger.warning(
                         "Rate limit exceeded",
                         ip=client_ip,
                         user_uuid=user_uuid,
                         limit=limit,
+                        current=current,
                     )
                     log_rate_limit_hit(
                         ip_address=client_ip,
@@ -139,12 +151,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                             "window_seconds": window,
                         },
                     )
-
-                # Increment and set expiry
-                pipe = self._redis.pipeline()
-                pipe.incr(key)
-                pipe.expire(key, window)
-                pipe.execute()
             except Exception as e:
                 logger.debug("Rate limit Redis error", error=str(e))
                 # Fall through to fail-closed logic below

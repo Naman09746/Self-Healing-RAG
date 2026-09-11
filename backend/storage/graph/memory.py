@@ -22,7 +22,7 @@ class InMemoryGraphStore:
     def __init__(self):
         self.entities: Dict[str, Dict] = {}
         self.edges: List[Dict] = []
-        self._driver = None  # compat with retriever's driver check (falsy means disabled, but we still support query)
+        self._driver = True  # memory store is always available; driver check in retriever allows memory
 
     def add_entity(self, name: str, entity_type: str, properties: Optional[Dict] = None) -> None:
         if not name:

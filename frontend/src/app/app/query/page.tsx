@@ -25,6 +25,7 @@ import {
   Paperclip,
   FileUp,
   FileCheck,
+  X,
 } from "lucide-react";
 import { query as queryApi, documents as docsApi, type QueryResponse, type RetrievedChunk } from "@/lib/api";
 import { useToast } from "@/components/Toast";
@@ -64,10 +65,19 @@ export default function LiveQueryPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [feedbackGiven, setFeedbackGiven] = useState<Record<string, "up" | "down">>({});
 
+interface UploadQueueItem {
+  id: string;
+  name: string;
+  size: number;
+  status: "uploading" | "embedding" | "indexed" | "error";
+  chunks?: number;
+  error?: string;
+}
+
   // Document Drag & Drop + Manual Selection State
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
-  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [recentUploads, setRecentUploads] = useState<string[]>([]);
   const [selectedDocNames, setSelectedDocNames] = useState<string[]>([]);
   const [showDocSelector, setShowDocSelector] = useState(false);
@@ -76,30 +86,66 @@ export default function LiveQueryPage() {
   // Active query trace state for the selected/latest response
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
 
+  const formatFileSize = (bytes: number): string => {
+    if (!bytes || bytes === 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   const handleDocumentUpload = async (files: FileList | File[]) => {
     const fileList = Array.from(files);
     if (!fileList.length) return;
 
-    setUploadingDoc(true);
-    let successCount = 0;
-    const uploadedNames: string[] = [];
+    const newItems: UploadQueueItem[] = fileList.map((f) => ({
+      id: `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: f.name,
+      size: f.size,
+      status: "uploading",
+    }));
 
-    for (const file of fileList) {
+    setUploadQueue((prev) => [...newItems, ...prev]);
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const item = newItems[i];
+
+      // Update to embedding phase
+      setUploadQueue((prev) =>
+        prev.map((u) => (u.id === item.id ? { ...u, status: "embedding" } : u))
+      );
+
       try {
-        await docsApi.upload(file);
-        successCount++;
-        uploadedNames.push(file.name);
+        const res = await docsApi.upload(file);
+        const chunkCount = res.chunk_count ?? res.chunks_count ?? 1;
+
+        setUploadQueue((prev) =>
+          prev.map((u) =>
+            u.id === item.id ? { ...u, status: "indexed", chunks: chunkCount } : u
+          )
+        );
+
+        setSelectedDocNames((prev) =>
+          prev.includes(file.name) ? prev : [...prev, file.name]
+        );
+        setRecentUploads((prev) => [file.name, ...prev.filter((n) => n !== file.name)].slice(0, 5));
+        toast.success(`Indexed "${file.name}" (${chunkCount} chunks) into pgvector.`);
       } catch (err) {
-        toast.error(`Failed to ingest "${file.name}": ${(err as Error).message}`);
+        const rawErr = (err as Error).message || "Upload failed";
+        // Clean error display
+        const cleanErr = rawErr.length > 120 ? `${rawErr.slice(0, 117)}...` : rawErr;
+        setUploadQueue((prev) =>
+          prev.map((u) => (u.id === item.id ? { ...u, status: "error", error: cleanErr } : u))
+        );
+        toast.error(`Ingest failed for "${file.name}": ${cleanErr}`);
       }
     }
 
-    setUploadingDoc(false);
-    if (successCount > 0) {
-      setRecentUploads((prev) => [...uploadedNames, ...prev].slice(0, 5));
-      await refreshDocs();
-      toast.success(`Indexed ${successCount} document${successCount > 1 ? "s" : ""} into vector & sparse stores! Ready to query.`);
-    }
+    await refreshDocs();
+  };
+
+  const removeQueueItem = (id: string) => {
+    setUploadQueue((prev) => prev.filter((u) => u.id !== id));
   };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -432,23 +478,71 @@ export default function LiveQueryPage() {
 
         {/* Chat Stream Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-          {/* Recent Uploads Pill Notification */}
-          {recentUploads.length > 0 && (
-            <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300">
-              <FileCheck size={14} className="shrink-0 text-emerald-600" />
-              <div className="flex-1 truncate">
-                <span className="font-semibold">Ready to query:</span> {recentUploads.join(", ")}
-              </div>
-              <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md bg-emerald-200/60 dark:bg-emerald-900/60 text-emerald-900 dark:text-emerald-200 shrink-0">
-                Indexed
-              </span>
-            </div>
-          )}
-
-          {uploadingDoc && (
-            <div className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300 animate-pulse">
-              <Loader2 size={14} className="animate-spin text-blue-600" />
-              <span>Ingesting and embedding document chunks into pgvector...</span>
+          {/* Live Ingestion / Upload Progress Cards */}
+          {uploadQueue.length > 0 && (
+            <div className="space-y-2">
+              {uploadQueue.map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex items-center justify-between gap-3 p-3 rounded-xl border text-xs transition-all ${
+                    item.status === "indexed"
+                      ? "bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200"
+                      : item.status === "error"
+                      ? "bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200"
+                      : "bg-blue-50/70 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/60 text-blue-900 dark:text-blue-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        item.status === "indexed"
+                          ? "bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400"
+                          : item.status === "error"
+                          ? "bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400"
+                          : "bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400"
+                      }`}
+                    >
+                      {item.status === "indexed" ? (
+                        <CheckCircle2 size={15} />
+                      ) : item.status === "error" ? (
+                        <AlertTriangle size={15} />
+                      ) : (
+                        <Loader2 size={15} className="animate-spin" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold truncate text-[12px] flex items-center gap-1.5">
+                        <span>{item.name}</span>
+                        <span className="text-[10px] opacity-60 font-mono font-normal">
+                          ({formatFileSize(item.size)})
+                        </span>
+                      </div>
+                      <div className="text-[11px] opacity-75 mt-0.5 truncate">
+                        {item.status === "uploading" && "Uploading document to server..."}
+                        {item.status === "embedding" && "Chunking, calculating embeddings & writing to pgvector..."}
+                        {item.status === "indexed" && (
+                          <span className="text-emerald-700 dark:text-emerald-300 font-medium">
+                            Ready to query • {item.chunks || 1} chunks indexed across vector & sparse stores
+                          </span>
+                        )}
+                        {item.status === "error" && (
+                          <span className="text-rose-700 dark:text-rose-300 font-medium">
+                            {item.error || "Ingestion failed"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeQueueItem(item.id)}
+                    className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 opacity-60 hover:opacity-100 transition-opacity"
+                    title="Dismiss"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
@@ -660,7 +754,7 @@ export default function LiveQueryPage() {
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2.5">
           {/* Hidden File Input */}
           <input
             ref={fileInputRef}
@@ -676,6 +770,48 @@ export default function LiveQueryPage() {
             }}
           />
 
+          {/* Attached Files Tray (ChatGPT / Claude Style) */}
+          {uploadQueue.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 max-h-28 overflow-y-auto pr-1">
+              {uploadQueue.map((item) => (
+                <div
+                  key={item.id}
+                  className={`inline-flex items-center gap-2 pl-2.5 pr-2 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+                    item.status === "indexed"
+                      ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200"
+                      : item.status === "error"
+                      ? "bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200"
+                      : "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-200"
+                  }`}
+                >
+                  <div className="shrink-0">
+                    {item.status === "indexed" ? (
+                      <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400" />
+                    ) : item.status === "error" ? (
+                      <AlertTriangle size={13} className="text-rose-600 dark:text-rose-400" />
+                    ) : (
+                      <Loader2 size={13} className="animate-spin text-blue-600 dark:text-blue-400" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 truncate max-w-[200px]">
+                    <span className="truncate">{item.name}</span>
+                    <span className="text-[10px] opacity-60 font-mono">
+                      {formatFileSize(item.size)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeQueueItem(item.id)}
+                    className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-colors ml-0.5"
+                    title="Remove"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -687,11 +823,11 @@ export default function LiveQueryPage() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingDoc || loading}
+              disabled={loading}
               title="Attach & Index Documents (PDF, MD, TXT)"
               className="h-11 w-11 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 flex items-center justify-center transition-all shrink-0 cursor-pointer disabled:opacity-50"
             >
-              {uploadingDoc ? (
+              {uploadQueue.some((u) => u.status === "uploading" || u.status === "embedding") ? (
                 <Loader2 size={16} className="animate-spin text-blue-600" />
               ) : (
                 <Paperclip size={16} />

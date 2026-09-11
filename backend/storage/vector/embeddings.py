@@ -83,10 +83,17 @@ class EmbeddingProvider:
         self,
         model: str | None = None,
         dim: int | None = None,
-        use_hash_fallback: bool = True,
+        use_hash_fallback: bool | None = None,
     ):
         self.model = model or getattr(settings, "EMBEDDING_MODEL", "nomic-embed-text")
         self.dim = dim or getattr(settings, "VECTOR_STORE_DIM", 768)
+        # Respect global flag if not explicitly overridden (tests can pass True)
+        if use_hash_fallback is None:
+            use_hash_fallback = bool(getattr(settings, "EMBEDDING_FALLBACK_ENABLED", True))
+            # Default True for offline/tests; prod should set False via .env
+            # If no setting, fallback to True to keep backward compat with existing tests
+            if not hasattr(settings, "EMBEDDING_FALLBACK_ENABLED"):
+                use_hash_fallback = True
         self.use_hash_fallback = use_hash_fallback
         self._provider = (getattr(settings, "LLM_PROVIDER", "ollama") or "ollama").lower()
         self._ollama_host = getattr(settings, "OLLAMA_HOST", "http://localhost:11434")
@@ -129,10 +136,11 @@ class EmbeddingProvider:
             return
         got = len(vecs[0])
         if got != self.dim:
-            # Auto-adjust dim if provider returns different size but allow with warning for migration
-            logger.warning("Embedding dim mismatch: configured %s but provider returned %s", self.dim, got)
-            # Do not raise immediately; let caller decide. For strict mode, uncomment:
-            # raise VectorDimMismatchError(f"Expected dim {self.dim} got {got}")
+            msg = f"Embedding dim mismatch: configured {self.dim} but provider returned {got} for model {self.model}"
+            if getattr(settings, "EMBEDDING_STRICT_DIM", True):
+                logger.error(msg)
+                raise EmbeddingError(msg + ". Set VECTOR_STORE_DIM to match EMBEDDING_MODEL or disable EMBEDDING_STRICT_DIM.")
+            logger.warning(msg + " (strict dim disabled, proceeding)")
 
 
 _embedding_provider: EmbeddingProvider | None = None

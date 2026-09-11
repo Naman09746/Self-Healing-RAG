@@ -2,8 +2,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Union
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 try:
     from email_validator import validate_email, EmailNotValidError
 except ImportError:
@@ -27,11 +28,16 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"api/v1/auth/login")
 
 class Token(BaseModel):
     access_token: str
-    token_type: str
+    token_type: str = "bearer"
+    refresh_token: Optional[str] = None
+
+class RefreshRequest(BaseModel):
+    refresh_token: Optional[str] = None
 
 class UserBase(BaseModel):
     email: str
     full_name: Optional[str] = None
+    name: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
@@ -53,11 +59,14 @@ class UserCreate(UserBase):
             raise ValueError("Password must be at least 8 characters long")
         return v
 
-class UserResponse(UserBase):
-    id: int
-    is_active: bool
+class UserResponse(BaseModel):
+    id: Optional[int] = None
+    email: str
+    full_name: Optional[str] = None
+    is_active: bool = True
     user_uuid: str
     tenant_id: str
+    role: str = "viewer"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,7 +94,7 @@ async def get_current_user(
     
     return user
 
-@router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/signup", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def signup(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     # Check if user exists
     result = await db.execute(select(DBUser).where(DBUser.email == user_in.email))
@@ -98,10 +107,11 @@ async def signup(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     # Create new user with immutable user_uuid and default role
     user_uuid = str(uuid.uuid4())
     tenant_id = user_in.tenant_id or user_uuid  # If no tenant specified, user_uuid = tenant_id
+    full_name = user_in.full_name or user_in.name or ""
     db_user = DBUser(
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
-        full_name=user_in.full_name,
+        full_name=full_name,
         user_uuid=user_uuid,
         tenant_id=tenant_id,
         role=Role.VIEWER.value,
@@ -113,7 +123,14 @@ async def signup(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     # Audit log
     log_user_signup(email=user_in.email, tenant_id=tenant_id)
 
-    return db_user
+    access_token = create_access_token(
+        subject=db_user.email,
+        tenant_id=db_user.tenant_id,
+        user_uuid=db_user.user_uuid,
+        role=db_user.role or Role.VIEWER.value,
+    )
+
+    return Token(access_token=access_token, token_type="bearer")
 
 @router.post("/login", response_model=Token)
 async def login(
@@ -181,6 +198,54 @@ async def login(
     )
 
     return Token(access_token=access_token, token_type="bearer")
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Refresh an access token using an existing valid token or refresh token payload."""
+    token_str = ""
+    try:
+        body = await request.json()
+        token_str = body.get("refresh_token") or ""
+    except Exception:
+        pass
+
+    if not token_str:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token_str = auth_header.split(" ", 1)[1]
+
+    if not token_str:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token required for refresh",
+        )
+
+    try:
+        payload = decode_access_token(token_str)
+        email = payload.get("sub")
+        if not email:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    result = await db.execute(select(DBUser).where(DBUser.email == email))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    new_token = create_access_token(
+        subject=user.email,
+        tenant_id=user.tenant_id,
+        user_uuid=user.user_uuid,
+        role=user.role if hasattr(user, 'role') and user.role else Role.VIEWER.value,
+    )
+
+    return Token(access_token=new_token, token_type="bearer")
+
 
 @router.get("/me", response_model=UserResponse)
 async def read_users_me(

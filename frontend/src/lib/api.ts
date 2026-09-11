@@ -139,9 +139,12 @@ export interface DocumentInfo {
 
 export interface IngestionResponse {
   document_id: string;
-  filename: string;
-  status: string;
-  chunks_count: number;
+  file_name?: string;
+  filename?: string;
+  chunk_count?: number;
+  chunks_count?: number;
+  storage?: string[];
+  status?: string;
 }
 
 export interface MetricsSnapshot {
@@ -230,9 +233,13 @@ async function request<T>(
   } catch (err) {
     if (err instanceof ApiError) throw err;
     if ((err as Error).name === "AbortError") {
-      throw new ApiError(408, "TIMEOUT", `Request timed out after ${timeout}ms`);
+      throw new ApiError(408, "TIMEOUT", `Request timed out after ${timeout}ms. Please ensure the backend server is running.`);
     }
-    throw new ApiError(0, "NETWORK", (err as Error).message);
+    const msg = (err as Error).message || "";
+    if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("fetch failed")) {
+      throw new ApiError(0, "NETWORK", "Cannot connect to Nexus Core API. Please ensure the backend service is running on port 8000.");
+    }
+    throw new ApiError(0, "NETWORK", msg || "Network connection error.");
   } finally {
     clearTimeout(timeoutId);
   }
@@ -242,15 +249,15 @@ async function request<T>(
 
 export const auth = {
   login: (email: string, password: string) =>
-    request<AuthResponse>("POST", "/auth/login", { email, password }, { skipAuth: true }),
+    request<AuthResponse>("POST", "/auth/login", { email, password }, { skipAuth: true, timeout: 15000 }),
 
   signup: (email: string, password: string, name?: string) =>
-    request<AuthResponse>("POST", "/auth/signup", { email, password, name }, { skipAuth: true }),
+    request<AuthResponse>("POST", "/auth/signup", { email, password, name }, { skipAuth: true, timeout: 15000 }),
 
   refresh: (refreshToken: string) =>
-    request<AuthResponse>("POST", "/auth/refresh", { refresh_token: refreshToken }, { skipAuth: true }),
+    request<AuthResponse>("POST", "/auth/refresh", { refresh_token: refreshToken }, { skipAuth: true, timeout: 15000 }),
 
-  profile: () => request<UserProfile>("GET", "/auth/me"),
+  profile: () => request<UserProfile>("GET", "/auth/me", undefined, { timeout: 10000 }),
 };
 
 // ─── Query API ─────────────────────────────────────────────
@@ -280,7 +287,7 @@ export const query = {
       .then(async (res) => {
         if (!res.ok) {
           const err = await res.json().catch(() => ({ message: res.statusText }));
-          throw new Error(err.message);
+          throw new Error(err.detail || err.message || `Server error (${res.status})`);
         }
 
         const reader = res.body?.getReader();
@@ -297,16 +304,20 @@ export const query = {
           const lines = buffer.split("\n");
           buffer = lines.pop() || "";
 
+          let currentEvent = "";
           for (const line of lines) {
             if (line.startsWith("event: ")) {
-              const eventType = line.slice(7).trim();
-              // Next line should be data:
+              currentEvent = line.slice(7).trim();
               continue;
             }
             if (line.startsWith("data: ")) {
               const data = line.slice(6).trim();
               try {
                 const parsed = JSON.parse(data);
+                if (currentEvent === "error" || parsed.error) {
+                  callbacks.onError?.(new Error(parsed.message || parsed.error || "Streaming error"));
+                  continue;
+                }
                 if (parsed.phase && callbacks.onPhase) {
                   callbacks.onPhase(parsed.phase);
                 }

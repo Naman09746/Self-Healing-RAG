@@ -10,7 +10,7 @@ from backend.storage.graph.factory import get_graph_store
 from backend.agents.generation.llm_client import LLMClient
 from backend.core.logging import get_logger
 from backend.core.config import settings
-from backend.storage.tenant import resolve_tenant_id
+from backend.storage.tenant import resolve_tenant_id, deterministic_chunk_id
 
 logger = get_logger(__name__)
 
@@ -62,32 +62,43 @@ class IngestionPipeline:
             # 2. Chunk text
             chunks = self.chunker.split_text(text)
 
-            # 3. Prepare metadata with deterministic, content-addressed chunk IDs
-            #    Each Chunk object carries a SHA-256-based chunk_id derived from
-            #    its text. This ensures: idempotent re-ingestion, traceability,
-            #    and stable chunk-level citations.
+            # 3. Prepare metadata with deterministic, tenant-scoped chunk IDs
+            #    Uses deterministic_chunk_id(tenant_id, document_id, chunk_index, content)
+            #    to ensure cross-tenant isolation and idempotent re-ingestion.
             doc_id = str(uuid.uuid4())
             file_name = Path(file_path).name
             tid = resolve_tenant_id(tenant_id)
-            ids = [c.chunk_id for c in chunks]
             texts = [c.text for c in chunks]
+            ids = [deterministic_chunk_id(tid, doc_id, i, c.text) for i, c in enumerate(chunks)]
             metadatas = [
                 {
                     "document_id": doc_id,
                     "file_name": file_name,
                     "chunk_index": i,
                     "chunk_id": ids[i],
+                    "content_hash": chunks[i].chunk_id,
                 }
                 for i in range(len(chunks))
             ]
 
             # 4. Dense Store (provider-agnostic) — tenant_id is stamped at the storage layer
-            self.vector_store.add_chunks(texts, metadatas, ids, tenant_id=tid)
+            import asyncio as _asyncio
+            if hasattr(self.vector_store, "add_chunks_async"):
+                await self.vector_store.add_chunks_async(texts, metadatas, ids, tenant_id=tid)
+            elif hasattr(self.vector_store, "_add_chunks_async"):
+                await self.vector_store._add_chunks_async(texts, metadatas, ids, tenant_id=tid)
+            else:
+                await _asyncio.to_thread(self.vector_store.add_chunks, texts, metadatas, ids, tenant_id=tid)
 
             # 5. Sparse Store — tenant-aware, incremental (pg_tsvector) or rebuilt (bm25 memory)
             try:
                 sparse_provider = getattr(settings, "SPARSE_PROVIDER", "pg_tsvector")
-                if sparse_provider == "pg_tsvector":
+                if hasattr(self.bm25, "index_async") and sparse_provider == "pg_tsvector":
+                    try:
+                        await self.bm25.index_async(texts, metadatas, tenant_id=tid)
+                    except TypeError:
+                        await self.bm25.index_async(texts, metadatas)
+                elif sparse_provider == "pg_tsvector":
                     # PG tsvector supports incremental upsert — just index new chunks
                     try:
                         self.bm25.index(texts, metadatas, tenant_id=tid)  # type: ignore[call-arg]
@@ -118,30 +129,35 @@ class IngestionPipeline:
                         self.bm25.index(current_corpus, current_metadata)
             except Exception as e:
                 logger.error("Sparse indexing failed, rolling back vector store", error=str(e))
-                # Rollback: remove the chunks we just added
-                for chunk_id in ids:
-                    try:
-                        # pgvector/qdrant have no collection.delete(ids=) — use delete_document fallback
-                        if hasattr(self.vector_store, "collection") and hasattr(self.vector_store.collection, "delete"):
-                            self.vector_store.collection.delete(ids=[chunk_id])
-                        else:
-                            # For pgvector, we delete via direct store if possible; best-effort
-                            pass
-                    except Exception:
-                        pass
-                    try:
-                        if self._legacy_store is not None and hasattr(self._legacy_store, "collection"):
-                            self._legacy_store.collection.delete(ids=[chunk_id])
-                    except Exception:
-                        pass
+                # Rollback: remove document chunks from vector and sparse stores by document_id
+                try:
+                    import asyncio as _aio2
+                    if hasattr(self.vector_store, "delete_document_async"):
+                        await self.vector_store.delete_document_async(doc_id, tenant_id=tid)
+                    elif hasattr(self.vector_store, "delete_document"):
+                        await _aio2.to_thread(self.vector_store.delete_document, doc_id, tenant_id=tid)
+                except Exception as re:
+                    logger.warning("Vector rollback failed", error=str(re))
+                try:
+                    if hasattr(self.bm25, "delete_document_async"):
+                        await self.bm25.delete_document_async(doc_id, tenant_id=tid)
+                    elif hasattr(self.bm25, "delete_document"):
+                        self.bm25.delete_document(doc_id, tenant_id=tid)
+                except Exception:
+                    pass
                 raise
 
-            # 6. GraphRAG (Neo4j Entity Extraction using local LLM agent)
-            # Process the first 3 chunks to build a high-quality knowledge graph without slowing ingestion
-            try:
-                await self._extract_and_store_graph(texts[:3], doc_id)
-            except Exception as e:
-                logger.warning("Graph extraction failed, but vector and sparse stores are intact", error=str(e))
+            # 6. GraphRAG — gated by GRAPH_EXTRACTION_ENABLED (default False for free-tier)
+            if getattr(settings, "GRAPH_EXTRACTION_ENABLED", False):
+                try:
+                    import asyncio as _aio3
+                    await _aio3.wait_for(self._extract_and_store_graph(texts[:2], doc_id), timeout=8.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Graph extraction timed out after 8s, proceeding")
+                except Exception as e:
+                    logger.warning("Graph extraction failed, but vector and sparse stores are intact", error=str(e))
+            else:
+                logger.debug("Graph extraction skipped (GRAPH_EXTRACTION_ENABLED=False)")
 
             logger.info("Advanced Ingestion complete", doc_id=doc_id, chunks=len(chunks))
 

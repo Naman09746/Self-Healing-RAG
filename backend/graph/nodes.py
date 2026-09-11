@@ -138,11 +138,44 @@ def create_retrieval_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]
                     score=res.get("rerank_score", res.get("score", 0.0)),
                     source=document_id or metadata.get("file_name", "unknown"),
                     metadata=metadata,
+                    distance=res.get("distance", None),
                 )
             )
 
-        # Check for knowledge absence (Phase 1A fast-fail)
-        has_relevant = any(c.score >= settings.RELEVANCE_THRESHOLD for c in chunks)
+        # Check for knowledge absence (Phase 1A fast-fail) — distance-aware
+        # RRF scores are ~0.016, so threshold 0.5 never matches; use cosine distance when available.
+        # For pgvector: distance = 1 - cosine_similarity, 0=identical, 2=opposite.
+        # RELEVANCE_THRESHOLD is cosine similarity, so convert to distance threshold.
+        if len(chunks) == 0:
+            has_relevant = False
+        else:
+            # If any chunk has a vector distance, use that for relevance
+            dist_threshold = 1.0 - float(settings.RELEVANCE_THRESHOLD)  # e.g. 0.5 -> 0.5 distance
+            # Clamp to sensible bounds: at least 0.65 to avoid over-filtering moderate matches,
+            # at most 0.85 to avoid accepting pure noise
+            dist_threshold = max(0.65, min(dist_threshold, 0.85))
+            has_relevant = False
+            # Determine score threshold for non-vector results
+            rerank_provider = getattr(settings, "RERANKER_PROVIDER", "none") or "none"
+            is_cross_encoder = rerank_provider.lower() not in ("none", "", "noop")
+            score_thresh = float(settings.RELEVANCE_THRESHOLD) if is_cross_encoder else 0.008
+            for c in chunks:
+                if c.distance is not None:
+                    try:
+                        if float(c.distance) <= dist_threshold:
+                            has_relevant = True
+                            break
+                    except Exception:
+                        pass
+                else:
+                    if c.score >= score_thresh:
+                        has_relevant = True
+                        break
+            # Edge: if no distance and all RRF but corpus non-empty, treat as relevant if we have any chunk
+            # (prevents false fast-fail on small corpora with NoOp reranker)
+            if not has_relevant and all(c.distance is None for c in chunks):
+                # At least one fused result exists — consider relevant
+                has_relevant = len(chunks) > 0
         no_relevant = (len(chunks) == 0) or (not has_relevant)
 
         result: Dict[str, Any] = {
@@ -328,12 +361,24 @@ def create_output_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]]:
             state.session_id, "assistant", answer
         )
 
-        deps.query_cache.cache_query(
-            state.original_query or state.query,
-            answer,
-            {"grounding_score": state.grounding_score},
-            tenant_id=state.tenant_id,
-        )
+        # Async cache write (non-blocking but await if possible)
+        try:
+            if hasattr(deps.query_cache, "cache_query_async"):
+                await deps.query_cache.cache_query_async(
+                    state.original_query or state.query,
+                    answer,
+                    {"grounding_score": state.grounding_score},
+                    tenant_id=state.tenant_id,
+                )
+            else:
+                deps.query_cache.cache_query(
+                    state.original_query or state.query,
+                    answer,
+                    {"grounding_score": state.grounding_score},
+                    tenant_id=state.tenant_id,
+                )
+        except Exception as e:
+            logger.debug("Cache store failed in output node", error=str(e))
 
         return {"final_answer": answer, "current_phase": "completed"}
 

@@ -210,16 +210,18 @@ class EvaluationRunner:
         evaluator = self._get_evaluator()
         scores = evaluator.evaluate_samples(samples)
 
-        # 3. Per-sample detail
+        # 3. Per-sample detail — use heuristic for detail to avoid 2N RAGAS LLM calls
+        # Overall scores already computed via RAGAS (if available); per-sample detail is heuristic-only for cost
         per_sample = []
         for s in samples:
-            sample_eval = evaluator.evaluate_samples([s])
+            # Heuristic is cheap (token overlap) and avoids double RAGAS cost; use it for per-sample sparkline
+            heur = evaluator._evaluate_heuristic([s])
             per_sample.append(
                 {
                     "query": s.query,
-                    "faithfulness": sample_eval.faithfulness,
-                    "answer_relevancy": sample_eval.answer_relevancy,
-                    "context_precision": sample_eval.context_precision,
+                    "faithfulness": heur.faithfulness,
+                    "answer_relevancy": heur.answer_relevancy,
+                    "context_precision": heur.context_precision,
                 }
             )
 

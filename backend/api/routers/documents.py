@@ -28,10 +28,14 @@ class DocumentResponse(BaseModel):
 async def list_documents(
     current_user: Annotated[DBUser, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
 ):
-    """List all ingested documents for the authenticated user's tenant."""
+    """List all ingested documents for the authenticated user's tenant (paginated)."""
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
     tenant_id = current_user.tenant_id or current_user.user_uuid
-    stmt = select(DBDocument).where(DBDocument.tenant_id == tenant_id).order_by(DBDocument.created_at.desc())
+    stmt = select(DBDocument).where(DBDocument.tenant_id == tenant_id).order_by(DBDocument.created_at.desc()).limit(limit).offset(offset)
     result = await db.execute(stmt)
     docs = result.scalars().all()
 
@@ -57,16 +61,39 @@ async def delete_document(
     current_user: Annotated[DBUser, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a document and all its chunks from relational and vector storage."""
+    """Delete a document and all its chunks from relational, vector, sparse, and cache storage."""
     tenant_id = current_user.tenant_id or current_user.user_uuid
     
-    # 1. Delete from vector store (provider-agnostic)
     svc = getattr(fastapi_request.app.state, "svc", None)
+    # 1. Delete from vector store (provider-agnostic) — prefer async
     if svc and svc.store:
         try:
-            svc.store.delete_document(document_id, tenant_id=tenant_id)
+            if hasattr(svc.store, "delete_document_async"):
+                await svc.store.delete_document_async(document_id, tenant_id=tenant_id)
+            else:
+                import asyncio
+                await asyncio.to_thread(svc.store.delete_document, document_id, tenant_id=tenant_id)
         except Exception as e:
             logger.warning("Failed to delete chunks from vector store", error=str(e), document_id=document_id)
+    # 1b. Delete from sparse store
+    if svc and svc.hybrid_retriever and getattr(svc.hybrid_retriever, "bm25", None):
+        try:
+            sparse = svc.hybrid_retriever.bm25
+            if hasattr(sparse, "delete_document_async"):
+                await sparse.delete_document_async(document_id, tenant_id=tenant_id)
+            elif hasattr(sparse, "delete_document"):
+                sparse.delete_document(document_id, tenant_id=tenant_id)
+        except Exception as e:
+            logger.warning("Failed to delete from sparse store", error=str(e), document_id=document_id)
+    # 1c. Invalidate tenant query cache (stale answers after delete)
+    if svc and getattr(svc, "query_cache", None):
+        try:
+            if hasattr(svc.query_cache, "clear_tenant_cache_async"):
+                await svc.query_cache.clear_tenant_cache_async(tenant_id)
+            elif hasattr(svc.query_cache, "clear_tenant_cache"):
+                svc.query_cache.clear_tenant_cache(tenant_id)
+        except Exception as e:
+            logger.debug("Cache invalidation failed on delete", error=str(e))
 
     # 2. Delete from relational DB
     stmt = delete(DBDocument).where(

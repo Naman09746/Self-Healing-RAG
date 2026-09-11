@@ -115,6 +115,7 @@ class RetrievedChunk:
     score: float
     source: str
     metadata: dict = field(default_factory=dict)
+    distance: Optional[float] = None
 
 
 @dataclass

@@ -71,11 +71,17 @@ def _split_text_recursively(
                 doc_str = separator.join(current_doc).strip()
                 if doc_str:
                     chunks.append(doc_str)
+                # Slide window to respect overlap: keep last characters up to chunk_overlap
+                # Recompute total accurately by re-joining instead of incremental subtraction
                 while current_doc and total > chunk_overlap:
-                    popped = current_doc.pop(0)
-                    total -= len(popped) + (len(separator) if current_doc else 0)
+                    current_doc.pop(0)
+                    total = len(separator.join(current_doc)) if current_doc else 0
+                # If still over overlap due to large chunk, clear
+                if total > chunk_overlap:
+                    current_doc = []
+                    total = 0
             current_doc.append(s)
-            total += s_len + (len(separator) if len(current_doc) > 1 else 0)
+            total = len(separator.join(current_doc)) if current_doc else s_len
         else:
             current_doc.append(s)
             total += s_len + sep_len
@@ -102,6 +108,11 @@ class Chunker:
     def __init__(self, chunk_size: Optional[int] = None, chunk_overlap: Optional[int] = None):
         self.chunk_size = chunk_size or settings.CHUNK_SIZE
         self.chunk_overlap = chunk_overlap or settings.CHUNK_OVERLAP
+        # Guard: overlap must be smaller than chunk_size
+        if self.chunk_overlap >= self.chunk_size:
+            self.chunk_overlap = max(0, self.chunk_size // 5)
+        if self.chunk_size < 1:
+            raise ValueError("chunk_size must be >=1")
 
     def split_text(self, text: str) -> List[Chunk]:
         """Split text into chunks with deterministic content-addressed IDs.

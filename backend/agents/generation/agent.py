@@ -13,10 +13,20 @@ class GenerationAgent:
 
     def _build_prompt(self, query: str, context_chunks: List[str], history: str = "") -> str:
         """Build the prompt template shared by both sync and streaming paths."""
-        context = "\n\n".join(context_chunks)
-        history_section = f"\nCONVERSATION HISTORY:\n{history}\n" if history else ""
-        return f"""You are a professional assistant. Use the following pieces of retrieved context and conversation history to answer the question.
-If you don't know the answer, just say that you don't know. Do not fabricate information.
+        # Enumerate chunks for citation and truncate to token budget (~3000 tokens ≈ 12000 chars)
+        labeled = []
+        for i, c in enumerate(context_chunks):
+            # Truncate individual chunk to avoid one huge chunk dominating
+            trimmed = c[:3000] if len(c) > 3000 else c
+            labeled.append(f"[Chunk {i+1}] {trimmed}")
+        context = "\n\n".join(labeled)
+        # Global budget: ~12000 chars (~3000 tokens) + history + query
+        if len(context) > 12000:
+            context = context[:12000] + "\n...[truncated]"
+        history_section = f"\nCONVERSATION HISTORY:\n{history[:2000]}\n" if history else ""
+        return f"""You are a professional assistant. Use ONLY the following retrieved context and conversation history to answer the question.
+If the answer is not contained in the context, say you don't know. Do not fabricate information.
+Cite sources where possible using [Chunk N] notation.
 {history_section}
 CONTEXT:
 {context}

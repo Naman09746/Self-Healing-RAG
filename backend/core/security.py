@@ -77,7 +77,13 @@ def _load_or_generate_keys() -> Tuple[Any, Any]:
             _PUBLIC_KEY = _PRIVATE_KEY.public_key()
             logger.info("JWT_PUBLIC_KEY not provided; derived from private key.")
     else:
-        # Auto-generate development keypair
+        # Auto-generate only for non-production
+        env = getattr(settings, "ENV", "development") or "development"
+        if env.lower() == "production":
+            raise RuntimeError(
+                "JWT_PRIVATE_KEY must be set in production (ENV=production). "
+                "Generate with: python -c \"from backend.core.security import generate_rsa_keypair; print(generate_rsa_keypair())\""
+            )
         logger.warning(
             "No JWT_PRIVATE_KEY configured. Auto-generating development keypair. "
             "Set JWT_PRIVATE_KEY and JWT_PUBLIC_KEY in .env for production."
@@ -238,3 +244,14 @@ def decode_access_token(token: str) -> dict:
     return jwt.decode(
         token, public_key, algorithms=[settings.JWT_ALGORITHM]
     )
+
+# Cached decode to avoid double RSA verify per request (rate_limit + audit)
+from functools import lru_cache
+
+@lru_cache(maxsize=2048)
+def _cached_decode(token: str) -> dict:
+    return decode_access_token(token)
+
+def cached_decode_access_token(token: str) -> dict:
+    """Cached variant for middleware hot path — still verifies signature and expiry."""
+    return _cached_decode(token)

@@ -80,8 +80,38 @@ async def stream_rag_pipeline(
     from backend.graph.state import RAGState
 
     # ---- cache check ----------------------------------------------------
-
-    cached = deps.query_cache.get_cached_query(query, tenant_id=tenant_id)
+    cached = None
+    try:
+        if hasattr(deps.query_cache, "get_cached_query_async"):
+            maybe = deps.query_cache.get_cached_query_async(query, tenant_id=tenant_id)
+            import inspect
+            if inspect.isawaitable(maybe):
+                maybe = await maybe
+            # Only accept dict/None; MagicMock or other non-dict treated as miss
+            if isinstance(maybe, dict) or maybe is None:
+                # If dict is non-empty, it's a hit; if None, miss; if empty dict, miss
+                if isinstance(maybe, dict) and maybe:
+                    cached = maybe
+                elif maybe is None:
+                    cached = None
+                else:
+                    cached = None
+            else:
+                cached = None
+    except Exception:
+        cached = None
+    if cached is None:
+        try:
+            maybe2 = deps.query_cache.get_cached_query(query, tenant_id=tenant_id)
+            if isinstance(maybe2, dict):
+                cached = maybe2
+            elif maybe2 is None:
+                cached = None
+            else:
+                # MagicMock or unexpected type -> miss
+                cached = None
+        except Exception:
+            cached = None
     if cached:
         logger.info("Serving from semantic cache (stream)", query=query)
         yield _sse("phase", {"phase": "cache_hit", "retry_count": 0})

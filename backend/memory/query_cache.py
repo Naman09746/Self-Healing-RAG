@@ -41,7 +41,18 @@ class QueryCache:
         
         logger.info("QueryCache using provider", provider=self._provider)
 
-    def get_cached_query(self, query: str, tenant_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def _similarity_from_distance(self, distance: float) -> float:
+        """Convert cosine distance (0=identical, 2=opposite) to similarity 0-1."""
+        try:
+            d = float(distance)
+        except Exception:
+            return 0.0
+        # Clamp distance to [0,2], similarity = 1 - d (for unit vectors) then clamp to [0,1]
+        # Previously buggy: if similarity <0: similarity = 1 - similarity produced >1 values
+        sim = 1.0 - d
+        return max(0.0, min(1.0, sim))
+
+    async def get_cached_query_async(self, query: str, tenant_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         tracer = get_tracer()
         with tracer.start_as_current_span("cache_read") as span:
             span.set_attribute("query", query[:200])
@@ -49,18 +60,17 @@ class QueryCache:
             span.set_attribute("provider", self._provider)
             try:
                 if self._vector_store is not None:
-                    # pgvector/qdrant/pinecone path: use VectorStore.query
-                    results = self._vector_store.query(query, n_results=1, tenant_id=tenant_id)
+                    if hasattr(self._vector_store, "query_async"):
+                        results = await self._vector_store.query_async(query, n_results=1, tenant_id=tenant_id)
+                    else:
+                        import asyncio
+                        results = await asyncio.to_thread(self._vector_store.query, query, n_results=1, tenant_id=tenant_id)
                     if not results.get("documents") or not results["documents"][0]:
                         span.set_attribute("hit", False)
                         span.set_status(trace.Status(trace.StatusCode.OK))
                         return None
                     distance = results["distances"][0][0] if results.get("distances") and results["distances"][0] else 1.0
-                    # pgvector distance is cosine distance (0=identical), chroma also; normalize to similarity
-                    similarity = 1.0 - float(distance)
-                    # For stores returning similarity directly, distance may already be similarity; handle both
-                    if similarity < 0:
-                        similarity = 1.0 - similarity
+                    similarity = self._similarity_from_distance(distance)
                     span.set_attribute("similarity", round(similarity, 4))
                     if similarity >= self.similarity_threshold:
                         meta = results["metadatas"][0][0] if results.get("metadatas") and results["metadatas"][0] else {}
@@ -81,7 +91,42 @@ class QueryCache:
                 logger.error("Cache lookup failed", error=str(e))
                 return None
 
-    def cache_query(self, query: str, answer: str, metadata: Dict[str, Any] = None, tenant_id: Optional[str] = None) -> None:
+    def get_cached_query(self, query: str, tenant_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        # Sync wrapper for backward compat; delegates to async if loop not running
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                # Inside async context but called sync — use threadpool
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    return pool.submit(asyncio.run, self.get_cached_query_async(query, tenant_id)).result()
+            return asyncio.run(self.get_cached_query_async(query, tenant_id))
+        except RuntimeError:
+            import asyncio
+            return asyncio.run(self.get_cached_query_async(query, tenant_id))
+        except Exception as e:
+            logger.debug("Sync cache fallback failed, trying direct sync query", error=str(e))
+            # Fallback to legacy sync query
+            tracer = get_tracer()
+            with tracer.start_as_current_span("cache_read_sync_fallback") as span:
+                try:
+                    results = self._vector_store.query(query, n_results=1, tenant_id=tenant_id) if self._vector_store else None
+                    if not results or not results.get("documents") or not results["documents"][0]:
+                        return None
+                    distance = results["distances"][0][0] if results.get("distances") and results["distances"][0] else 1.0
+                    similarity = self._similarity_from_distance(distance)
+                    if similarity >= self.similarity_threshold:
+                        meta = results["metadatas"][0][0] if results.get("metadatas") and results["metadatas"][0] else {}
+                        answer = meta.get("answer") if isinstance(meta, dict) else None
+                        if answer:
+                            return {"answer": answer, "metadata": meta}
+                    return None
+                except Exception as e2:
+                    logger.error("Cache lookup failed", error=str(e2))
+                    return None
+
+    async def cache_query_async(self, query: str, answer: str, metadata: Dict[str, Any] = None, tenant_id: Optional[str] = None) -> None:
         tracer = get_tracer()
         with tracer.start_as_current_span("cache_write") as span:
             span.set_attribute("query", query[:200])
@@ -92,10 +137,61 @@ class QueryCache:
                     combined_meta = {"answer": answer, **(metadata or {})}
                     tid = resolve_tenant_id(tenant_id)
                     enriched = enrich_metadata(combined_meta, tid)
-                    self._vector_store.add_chunks([query], [enriched], [str(uuid.uuid4())], tenant_id=tid)
+                    if hasattr(self._vector_store, "add_chunks_async"):
+                        await self._vector_store.add_chunks_async([query], [enriched], [str(uuid.uuid4())], tenant_id=tid)
+                    else:
+                        import asyncio
+                        await asyncio.to_thread(self._vector_store.add_chunks, [query], [enriched], [str(uuid.uuid4())], tenant_id=tid)
                     span.set_status(trace.Status(trace.StatusCode.OK))
                     logger.info("Query cached (vector)", query_preview=query[:60], tenant_id=tid)
             except Exception as e:
                 span.record_exception(e)
                 span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
                 logger.error("Cache store failed", error=str(e))
+
+    def cache_query(self, query: str, answer: str, metadata: Dict[str, Any] = None, tenant_id: Optional[str] = None) -> None:
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                # Fire-and-forget in async context to avoid blocking
+                loop.create_task(self.cache_query_async(query, answer, metadata, tenant_id))
+                return
+            asyncio.run(self.cache_query_async(query, answer, metadata, tenant_id))
+        except RuntimeError:
+            import asyncio
+            try:
+                asyncio.run(self.cache_query_async(query, answer, metadata, tenant_id))
+            except Exception as e:
+                logger.error("Cache store failed", error=str(e))
+        except Exception as e:
+            logger.error("Cache store failed", error=str(e))
+
+    async def clear_tenant_cache_async(self, tenant_id: str) -> int:
+        """Invalidate all cached queries for a tenant (called on document delete)."""
+        tid = resolve_tenant_id(tenant_id)
+        try:
+            if self._vector_store and hasattr(self._vector_store, "_get_sessionmaker"):
+                maker = self._vector_store._get_sessionmaker()
+                from sqlalchemy import text
+                async with maker() as session:
+                    result = await session.execute(text(f"DELETE FROM {self._vector_cache_table} WHERE tenant_id = :tid"), {"tid": tid})
+                    await session.commit()
+                    return result.rowcount if hasattr(result, "rowcount") else 0
+            elif self._vector_store and hasattr(self._vector_store, "_engine_maker"):
+                _, maker = self._vector_store._engine_maker()
+                from sqlalchemy import text
+                async with maker() as session:
+                    result = await session.execute(text(f"DELETE FROM {self._vector_cache_table} WHERE tenant_id = :tid"), {"tid": tid})
+                    await session.commit()
+                    return result.rowcount if hasattr(result, "rowcount") else 0
+        except Exception as e:
+            logger.warning("Cache invalidation failed", error=str(e), tenant_id=tid)
+        return 0
+
+    def clear_tenant_cache(self, tenant_id: str) -> int:
+        try:
+            import asyncio
+            return asyncio.run(self.clear_tenant_cache_async(tenant_id))
+        except Exception:
+            return 0

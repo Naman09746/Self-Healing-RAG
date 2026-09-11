@@ -29,9 +29,18 @@ class PgTsvectorSparseStore:
         self._ensured = False
 
     def _engine_maker(self):
+        if self._engine is not None and self._maker is not None:
+            return self._engine, self._maker
+        try:
+            from backend.storage.db.session import engine as shared_engine, AsyncSessionLocal as shared_maker
+            self._engine = shared_engine
+            self._maker = shared_maker
+            return self._engine, self._maker
+        except Exception:
+            pass
         if self._engine is None:
             url = settings.DATABASE_URL
-            self._engine = create_async_engine(url, echo=False, pool_size=5, max_overflow=10, pool_pre_ping=True)
+            self._engine = create_async_engine(url, echo=False, pool_size=3, max_overflow=5, pool_pre_ping=True, pool_recycle=300)
             self._maker = sessionmaker(self._engine, class_=AsyncSession, expire_on_commit=False)
         return self._engine, self._maker
 
@@ -39,9 +48,9 @@ class PgTsvectorSparseStore:
         if self._ensured:
             return
         try:
-            engine, _ = self._engine_maker()
-            async with engine.begin() as conn:
-                await conn.execute(
+            _, maker = self._engine_maker()
+            async with maker() as session:
+                await session.execute(
                     text(
                         f"""
                         CREATE TABLE IF NOT EXISTS {self.table} (
@@ -58,19 +67,18 @@ class PgTsvectorSparseStore:
                         """
                     )
                 )
-                await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tenant ON {self.table}(tenant_id)"))
-                await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_doc ON {self.table}(document_id)"))
-                # GIN index for tsvector
+                await session.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tenant ON {self.table}(tenant_id)"))
+                await session.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_doc ON {self.table}(document_id)"))
                 try:
-                    await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tsv ON {self.table} USING GIN (content_tsv)"))
+                    await session.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tsv ON {self.table} USING GIN (content_tsv)"))
                 except Exception as e:
                     logger.warning("Could not create GIN index", error=str(e))
+                await session.commit()
         except Exception as e:
-            # Fallback without generated column (for older Postgres without STORED)
             try:
-                engine, _ = self._engine_maker()
-                async with engine.begin() as conn:
-                    await conn.execute(
+                _, maker = self._engine_maker()
+                async with maker() as session:
+                    await session.execute(
                         text(
                             f"""
                             CREATE TABLE IF NOT EXISTS {self.table} (
@@ -87,7 +95,8 @@ class PgTsvectorSparseStore:
                             """
                         )
                     )
-                    await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tsv ON {self.table} USING GIN (content_tsv)"))
+                    await session.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tsv ON {self.table} USING GIN (content_tsv)"))
+                    await session.commit()
             except Exception as e2:
                 logger.warning("PgSparse ensure table failed", error=str(e), fallback_error=str(e2))
         finally:
@@ -109,14 +118,16 @@ class PgTsvectorSparseStore:
     def index(self, documents: List[str], metadata: Optional[List[Dict]] = None, tenant_id: Optional[str] = None) -> None:
         return self._run_sync(self._index_async(documents, metadata, tenant_id))
 
+    async def index_async(self, documents: List[str], metadata: Optional[List[Dict]] = None, tenant_id: Optional[str] = None) -> None:
+        return await self._index_async(documents, metadata, tenant_id)
+
     async def _index_async(self, documents: List[str], metadata: Optional[List[Dict]] = None, tenant_id: Optional[str] = None) -> None:
         if not documents:
             return
         await self._ensure_table()
         if metadata is None:
             metadata = [{} for _ in documents]
-        # If tenant_id not given but metadata has it, group by metadata tenant
-        engine, maker = self._engine_maker()
+        _, maker = self._engine_maker()
         assert maker is not None
         async with maker() as session:
             for doc, meta in zip(documents, metadata):
@@ -125,26 +136,25 @@ class PgTsvectorSparseStore:
                 chunk_id = str(meta.get("chunk_id", ""))
                 chunk_idx = int(meta.get("chunk_index", 0))
                 meta_json = json.dumps(meta, default=str)
-                # Upsert; for generated tsv column we don't insert content_tsv; for fallback we compute
+                # Use CAST(:metadata AS jsonb) to prevent SQLAlchemy colon parse syntax errors
                 try:
                     await session.execute(
                         text(
                             f"""
                             INSERT INTO {self.table} (id, tenant_id, document_id, chunk_id, chunk_index, content, metadata)
-                            VALUES (:id, :tid, :doc_id, :chunk_id, :chunk_idx, :content, :metadata::jsonb)
+                            VALUES (:id, :tid, :doc_id, :chunk_id, :chunk_idx, :content, CAST(:metadata AS jsonb))
                             ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, metadata = EXCLUDED.metadata
                             """
                         ),
                         {"id": chunk_id or doc[:48], "tid": tid, "doc_id": doc_id, "chunk_id": chunk_id, "chunk_idx": chunk_idx, "content": doc, "metadata": meta_json},
                     )
                 except Exception as e:
-                    # Try with content_tsv explicit for fallback table
                     try:
                         await session.execute(
                             text(
                                 f"""
                                 INSERT INTO {self.table} (id, tenant_id, document_id, chunk_id, chunk_index, content, content_tsv, metadata)
-                                VALUES (:id, :tid, :doc_id, :chunk_id, :chunk_idx, :content, to_tsvector('english', :content), :metadata::jsonb)
+                                VALUES (:id, :tid, :doc_id, :chunk_id, :chunk_idx, :content, to_tsvector('english', :content), CAST(:metadata AS jsonb))
                                 ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, content_tsv = to_tsvector('english', :content), metadata = EXCLUDED.metadata
                                 """
                             ),
@@ -157,6 +167,9 @@ class PgTsvectorSparseStore:
     def retrieve(self, query: str, k: int = 5, tenant_id: Optional[str] = None) -> List[Dict]:
         return self._run_sync(self._retrieve_async(query, k, tenant_id))
 
+    async def retrieve_async(self, query: str, k: int = 5, tenant_id: Optional[str] = None) -> List[Dict]:
+        return await self._retrieve_async(query, k, tenant_id)
+
     async def _retrieve_async(self, query: str, k: int = 5, tenant_id: Optional[str] = None) -> List[Dict]:
         if not query or not query.strip():
             return []
@@ -166,7 +179,6 @@ class PgTsvectorSparseStore:
             _, maker = self._engine_maker()
             assert maker is not None
             async with maker() as session:
-                # Try tsvector retrieval with ts_rank
                 result = await session.execute(
                     text(
                         f"""
@@ -190,19 +202,26 @@ class PgTsvectorSparseStore:
                     results.append({"content": content, "metadata": metadata or {}, "score": float(score) if score else 0.0, "chunk_id": chunk_id})
                 if results:
                     return results
-                # Fallback: LIKE search for small tables or no tsv match
-                result2 = await session.execute(
-                    text(f"SELECT content, metadata, chunk_id FROM {self.table} WHERE tenant_id = :tid AND content ILIKE :like LIMIT :k"),
-                    {"tid": tid, "like": f"%{query.split()[0]}%", "k": k},
-                )
-                rows2 = result2.fetchall()
-                return [{"content": r[0], "metadata": r[1] if isinstance(r[1], dict) else json.loads(r[1] or "{}"), "score": 0.5, "chunk_id": r[2]} for r in rows2]
+                # Fallback: trigram/ILIKE search only for non-stopword tokens, low score to avoid outranking true ts_rank
+                first_token = query.split()[0].strip("?.,!\"'") if query.split() else ""
+                stop = {"the", "a", "an", "and", "or", "is", "are", "what", "who", "where", "when", "how", "why", "this", "that"}
+                if len(first_token) > 2 and first_token.lower() not in stop:
+                    result2 = await session.execute(
+                        text(f"SELECT content, metadata, chunk_id FROM {self.table} WHERE tenant_id = :tid AND content ILIKE :like LIMIT :k"),
+                        {"tid": tid, "like": f"%{first_token}%", "k": k},
+                    )
+                    rows2 = result2.fetchall()
+                    return [{"content": r[0], "metadata": r[1] if isinstance(r[1], dict) else json.loads(r[1] or "{}"), "score": 0.01, "chunk_id": r[2]} for r in rows2]
+                return []
         except Exception as e:
             logger.warning("PgSparse retrieve failed, fallback to empty", error=str(e), tenant_id=tid)
             return []
 
     def delete_document(self, document_id: str, tenant_id: Optional[str] = None) -> None:
         return self._run_sync(self._delete_async(document_id, tenant_id))
+
+    async def delete_document_async(self, document_id: str, tenant_id: Optional[str] = None) -> None:
+        return await self._delete_async(document_id, tenant_id)
 
     async def _delete_async(self, document_id: str, tenant_id: Optional[str] = None) -> None:
         tid = resolve_tenant_id(tenant_id) if tenant_id else resolve_tenant_id("default")
@@ -215,6 +234,9 @@ class PgTsvectorSparseStore:
 
     def reset(self) -> None:
         self._run_sync(self._reset_async())
+
+    async def reset_async(self) -> None:
+        return await self._reset_async()
 
     async def _reset_async(self) -> None:
         await self._ensure_table()
@@ -229,6 +251,9 @@ class PgTsvectorSparseStore:
             return self._run_sync(self._heartbeat_async())
         except Exception:
             return False
+
+    async def heartbeat_async(self) -> bool:
+        return await self._heartbeat_async()
 
     async def _heartbeat_async(self) -> bool:
         try:
@@ -247,6 +272,9 @@ class PgTsvectorSparseStore:
             return self._run_sync(self._count_async(tenant_id))
         except Exception:
             return 0
+
+    async def count_async(self, tenant_id: Optional[str] = None) -> int:
+        return await self._count_async(tenant_id)
 
     async def _count_async(self, tenant_id: Optional[str] = None) -> int:
         tid = resolve_tenant_id(tenant_id) if tenant_id else None

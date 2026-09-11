@@ -55,7 +55,28 @@ async def run_rag_pipeline(
 
         # Check Semantic Cache — tenant-scoped (unless skip_cache is True)
         if not skip_cache and deps.query_cache:
-            cached = deps.query_cache.get_cached_query(query, tenant_id=tenant_id)
+            cached = None
+            try:
+                if hasattr(deps.query_cache, "get_cached_query_async"):
+                    maybe = deps.query_cache.get_cached_query_async(query, tenant_id=tenant_id)
+                    import inspect
+                    if inspect.isawaitable(maybe):
+                        maybe = await maybe
+                    if isinstance(maybe, dict) and maybe:
+                        cached = maybe
+                    elif maybe is None:
+                        cached = None
+                    else:
+                        cached = None
+            except Exception:
+                cached = None
+            if cached is None:
+                try:
+                    maybe2 = deps.query_cache.get_cached_query(query, tenant_id=tenant_id)
+                    if isinstance(maybe2, dict):
+                        cached = maybe2
+                except Exception:
+                    cached = None
             if cached:
                 pipeline_span.set_attribute("cached", True)
                 pipeline_span.set_status(trace.Status(trace.StatusCode.OK))
@@ -122,17 +143,30 @@ async def run_rag_pipeline(
             pipeline_span.set_attribute("chunks_retrieved", len(final_state.get("retrieved_chunks", [])))
             pipeline_span.set_status(trace.Status(trace.StatusCode.OK))
 
+            chunks = final_state.get("retrieved_chunks", [])
+            chunk_list = chunks.to_list() if hasattr(chunks, "to_list") else list(chunks)
+            sources_list = [
+                {
+                    "chunk_id": getattr(c, "chunk_id", ""),
+                    "content": getattr(c, "content", ""),
+                    "score": getattr(c, "score", 0.0),
+                    "source": getattr(c, "source", ""),
+                }
+                for c in chunk_list
+            ]
+
             return {
                 "query": final_state.get("query", query),
                 "answer": final_state.get("final_answer"),
                 "session_id": session_id,
-                "chunks_retrieved": len(final_state.get("retrieved_chunks", [])),
+                "chunks_retrieved": len(chunk_list),
                 "status": final_state.get("current_phase"),
                 "grounding_score": final_state.get("grounding_score", 0.0),
                 "retry_count": final_state.get("retry_count", 0),
                 "complexity_score": final_state.get("complexity_score", 0.0),
                 "verification_mode": final_state.get("verification_mode", ""),
                 "is_hallucinated": final_state.get("is_hallucinated", False),
+                "sources": sources_list,
             }
         except Exception as e:
             pipeline_span.record_exception(e)

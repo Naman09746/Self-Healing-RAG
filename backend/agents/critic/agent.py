@@ -150,7 +150,7 @@ class CriticAgent:
             span.set_attribute("answer_length", len(answer))
             span.set_attribute("context_chunks", len(context_chunks))
 
-            context = "\n\n".join(context_chunks[:3])
+            context = "\n\n".join(context_chunks[:6])
             prompt = (
                 "You are an objective AI fact-checker. Determine if the following answer is fully supported by the provided source context.\n\n"
                 f"SOURCE CONTEXT:\n{context}\n\n"
@@ -188,15 +188,15 @@ class CriticAgent:
                     "healing_target": mode,
                 }
             except Exception as e:
-                logger.warning("Fast-path critic evaluation failed, using fallback", error=str(e))
+                logger.warning("Fast-path critic evaluation failed, failing closed to trigger healing", error=str(e))
                 return {
-                    "grounding_score": 0.85,
-                    "is_hallucinated": False,
-                    "reasoning": f"Fast-path check fallback: {e}",
+                    "grounding_score": 0.0,
+                    "is_hallucinated": True,
+                    "reasoning": f"Fast-path check failed closed: {e}",
                     "verification_mode": "fast_pass_fallback",
                     "claims_analyzed": 0,
                     "detailed_results": [],
-                    "healing_target": "none",
+                    "healing_target": "targeted_healing",
                 }
 
 
