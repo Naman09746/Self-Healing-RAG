@@ -50,7 +50,7 @@ export function DocumentVault() {
     [upload, toast]
   );
 
-  const { isDragOverZone: dragOver, dragHandlers } = useDragDrop({
+  const { isHoveringZone: dragOver, zoneDragHandlers } = useDragDrop({
     onDrop: handleFilesUpload,
     multiple: true,
     maxFiles: 10,
@@ -121,7 +121,7 @@ export function DocumentVault() {
 
         {/* Drag and drop target area — light glassy, never dark — unified hook */}
         <div
-          {...dragHandlers}
+          {...zoneDragHandlers}
           onClick={() => fileInputRef.current?.click()}
           role="region"
           aria-label="File drop zone"

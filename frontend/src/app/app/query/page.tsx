@@ -143,7 +143,7 @@ interface UploadQueueItem {
     await refreshDocs();
   }, [refreshDocs, toast]);
 
-  const { isDragging, dragHandlers: queryDragHandlers } = useDragDrop({
+  const { isDragging, isHoveringZone, dragHandlers: queryDragHandlers, zoneDragHandlers } = useDragDrop({
     onDrop: handleDocumentUpload,
     multiple: true,
     maxFiles: 10,
@@ -300,20 +300,45 @@ interface UploadQueueItem {
       {...queryDragHandlers}
       className="relative flex-1 flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden"
     >
-      {/* ── Drag & Drop Full-Page Overlay — light glassy, never dark ── */}
+      {/* ── Drag & Drop Full-Page Overlay — ultra-smooth, interactive & zero-flicker ── */}
       {isDragging && (
-        <div className="absolute inset-0 z-50 bg-white/30 dark:bg-slate-900/20 backdrop-blur-[12px] flex flex-col items-center justify-center p-6 animate-in fade-in duration-200 pointer-events-none">
-          <div className="bg-white/90 dark:bg-slate-900/80 backdrop-blur-2xl rounded-3xl p-8 shadow-[0_20px_60px_rgba(37,99,235,0.18)] border border-white/60 dark:border-slate-700/50 flex flex-col items-center text-center max-w-sm mx-4 ring-1 ring-blue-200/30 dark:ring-blue-500/20">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center mb-4 shadow-[0_8px_24px_rgba(37,99,235,0.3)] animate-bounce">
-              <Upload size={28} className="text-white" />
+        <div
+          {...queryDragHandlers}
+          className="absolute inset-0 z-50 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in fade-in duration-200 cursor-copy"
+        >
+          <div
+            {...queryDragHandlers}
+            className="relative bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-3xl p-8 shadow-[0_24px_70px_rgba(37,99,235,0.25)] border-2 border-dashed border-blue-500/80 dark:border-blue-400/80 flex flex-col items-center text-center max-w-md mx-4 ring-8 ring-blue-500/10 dark:ring-blue-400/10 scale-100 animate-in zoom-in-95 duration-150"
+          >
+            {/* Pulsing Radar Ring */}
+            <div className="relative mb-5">
+              <div className="absolute -inset-2 rounded-2xl bg-blue-500/20 dark:bg-blue-400/20 blur-sm animate-pulse" />
+              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <Upload size={28} className="text-white animate-bounce" />
+              </div>
             </div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Drop Documents Here to Index</h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1.5 max-w-sm text-center leading-relaxed">
-              Files will be automatically chunked, embedded, and added to the PostgreSQL pgvector &amp; sparse search indexes.
+
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+              Release to Index Documents
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 max-w-xs text-center leading-relaxed">
+              Files will be parsed, chunked, and embedded into PostgreSQL pgvector &amp; BM25 in real time.
             </p>
-            <div className="mt-4 px-3.5 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[11px] font-medium border border-blue-200/60 dark:border-blue-800/50">
-              PDF • DOCX • PPTX • XLSX • CSV • TXT • MD • HTML • Images (OCR)
+
+            <div className="mt-5 flex flex-wrap justify-center gap-1.5 max-w-sm">
+              {["PDF", "DOCX", "PPTX", "XLSX", "CSV", "TXT", "MD", "JSON", "OCR"].map((fmt) => (
+                <span
+                  key={fmt}
+                  className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-[10px] font-semibold border border-blue-200/60 dark:border-blue-800/60"
+                >
+                  {fmt}
+                </span>
+              ))}
             </div>
+            
+            <p className="text-[11px] text-slate-400 mt-4">
+              Press <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">Esc</kbd> to cancel
+            </p>
           </div>
         </div>
       )}
@@ -536,16 +561,25 @@ interface UploadQueueItem {
                 Submit queries to run through the 7-agent Self-Healing RAG pipeline with hybrid retrieval (pgvector + BM25) and hallucination verification.
               </p>
 
-              {/* Quick Drop Zone Box for Empty State */}
+              {/* Quick Drop Zone Box for Empty State — animated interactive drop target */}
               <div
+                {...zoneDragHandlers}
                 onClick={() => fileInputRef.current?.click()}
-                className="mt-6 w-full p-5 rounded-2xl border-2 border-dashed border-slate-200/60 dark:border-slate-700/50 bg-white/60 dark:bg-slate-800/30 backdrop-blur-md hover:border-blue-300 dark:hover:border-blue-500/50 hover:bg-white/80 dark:hover:bg-slate-800/50 hover:shadow-[0_4px_20px_rgba(15,23,42,0.06)] cursor-pointer transition-all duration-300 text-center"
+                role="region"
+                aria-label="Document drop zone"
+                className={`mt-6 w-full p-6 rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-300 text-center ${
+                  isHoveringZone
+                    ? "border-blue-500 bg-blue-50/80 dark:bg-blue-950/40 shadow-[0_12px_40px_rgba(37,99,235,0.18)] ring-4 ring-blue-500/20 scale-[1.02]"
+                    : "border-slate-200/80 dark:border-slate-700/60 bg-white/60 dark:bg-slate-800/30 backdrop-blur-md hover:border-blue-400 dark:hover:border-blue-500 hover:bg-white/90 dark:hover:bg-slate-800/60 hover:shadow-[0_4px_20px_rgba(15,23,42,0.06)]"
+                }`}
               >
-                <div className="w-10 h-10 mx-auto rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700/50 flex items-center justify-center mb-2">
-                  <Upload size={16} className="text-slate-500 dark:text-slate-400" />
+                <div className={`w-11 h-11 mx-auto rounded-xl flex items-center justify-center mb-2.5 transition-transform ${
+                  isHoveringZone ? "scale-110 bg-blue-600 text-white shadow-md shadow-blue-500/30" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+                }`}>
+                  <Upload size={18} className={isHoveringZone ? "animate-bounce" : ""} />
                 </div>
                 <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  Drag &amp; drop files here, or click to browse
+                  {isHoveringZone ? "Drop to upload immediately" : "Drag & drop files here, or click to browse"}
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
                   PDF, DOCX, PPTX, XLSX, CSV, TXT, MD, HTML, JSON + images (OCR) — up to 50 MB
