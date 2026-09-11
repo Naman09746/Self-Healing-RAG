@@ -50,8 +50,8 @@ class TestPermissions:
         perms = ROLE_PERMISSIONS[Role.VIEWER]
         assert Permission.QUERY_RAG in perms
         assert Permission.STREAM_RAG in perms
+        assert Permission.INGEST_DOCUMENT in perms  # permissive: viewer can ingest own tenant
         assert Permission.VIEW_HEALTH in perms
-        assert Permission.INGEST_DOCUMENT not in perms
         assert Permission.VIEW_AUDIT not in perms
         assert Permission.MANAGE_USERS not in perms
 
@@ -133,10 +133,16 @@ class TestRequirePermissionDependency:
         assert result is None
 
     @patch("backend.core.rbac.get_role_from_token", return_value=Role.VIEWER)
-    def test_viewer_cannot_ingest(self, mock_get_role):
+    def test_viewer_can_ingest(self, mock_get_role):
+        checker = require_permission(Permission.INGEST_DOCUMENT)
+        result = checker(token="viewer_token")
+        assert result is None
+
+    @patch("backend.core.rbac.get_role_from_token", return_value=Role.AUDITOR)
+    def test_auditor_cannot_ingest(self, mock_get_role):
         checker = require_permission(Permission.INGEST_DOCUMENT)
         with pytest.raises(HTTPException) as exc:
-            checker(token="viewer_token")
+            checker(token="auditor_token")
         assert exc.value.status_code == 403
 
     @patch("backend.core.rbac.get_role_from_token", return_value=Role.VIEWER)

@@ -20,8 +20,11 @@ except ImportError:
 from backend.core.security import verify_password, create_access_token, get_password_hash, decode_access_token
 from backend.core.audit import log_user_login, log_user_signup, log_auth_failure
 from backend.core.rbac import Role
+from backend.core.logging import get_logger
 from backend.storage.db.session import get_db
 from backend.storage.db.models import User as DBUser
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"api/v1/auth/login")
@@ -112,7 +115,7 @@ async def signup(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
             detail="A user with this email already exists"
         )
     
-    # Create new user with immutable user_uuid and default editor role so they can query and ingest
+    # Create new user with immutable user_uuid and default viewer role (viewer now has ingest:document via permissive RBAC)
     user_uuid = str(uuid.uuid4())
     tenant_id = user_in.tenant_id or user_uuid  # If no tenant specified, user_uuid = tenant_id
     full_name = user_in.full_name or user_in.name or ""
@@ -122,7 +125,7 @@ async def signup(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
         full_name=full_name,
         user_uuid=user_uuid,
         tenant_id=tenant_id,
-        role=Role.EDITOR.value,
+        role=Role.VIEWER.value,
     )
     db.add(db_user)
     await db.commit()
@@ -191,12 +194,13 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    effective_role = user.role if hasattr(user, 'role') and user.role and user.role != Role.VIEWER.value else Role.EDITOR.value
+    # Keep DB role as canonical — no silent viewer->editor escalation
+    db_role = user.role if hasattr(user, 'role') and user.role else Role.VIEWER.value
     access_token = create_access_token(
         subject=user.email,
         tenant_id=user.tenant_id,
         user_uuid=user.user_uuid,
-        role=effective_role,
+        role=db_role,
     )
 
     # Audit log login success
@@ -246,12 +250,12 @@ async def refresh_token(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    effective_role = user.role if hasattr(user, 'role') and user.role and user.role != Role.VIEWER.value else Role.EDITOR.value
+    db_role = user.role if hasattr(user, 'role') and user.role else Role.VIEWER.value
     new_token = create_access_token(
         subject=user.email,
         tenant_id=user.tenant_id,
         user_uuid=user.user_uuid,
-        role=effective_role,
+        role=db_role,
     )
 
     return Token(access_token=new_token, token_type="bearer")

@@ -3,7 +3,7 @@ from typing import Annotated
 from backend.ingestion.pipeline import IngestionPipeline
 from backend.core.logging import get_logger
 from backend.api.routers.auth import get_current_user, DBUser
-from backend.core.rbac import Role, ROLE_PERMISSIONS, Permission
+from backend.core.rbac import Role, ROLE_PERMISSIONS, Permission, has_db_permission_for_user
 import shutil
 import os
 from pathlib import Path
@@ -45,32 +45,19 @@ async def ingest_file(
     current_user: Annotated[DBUser, Depends(get_current_user)] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Upload and ingest a file into hybrid, sparse, and graph storage.
+    """Upload and ingest a file into hybrid, sparse, and graph storage — permissive, tenant-isolated.
 
-    Tenant identity is derived from the authenticated user's JWT, **not**
-    from the request body. This prevents cross-tenant data injection.
-    Authentication is **required** — unauthenticated requests are rejected
-    by the ``get_current_user`` dependency. Ingestion also requires
-    ``ingest:document`` permission (editor/admin).
+    Tenant identity is derived from the authenticated user's DB record (`current_user.tenant_id`),
+    **not** from request body, JWT, or query param. Any authenticated role with `ingest:document`
+    (viewer/editor/admin) can ingest **only into their own tenant**. Cross-tenant spoofing is rejected.
+    DB role is canonical; stale JWT role is ignored (self-healing).
     """
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    # RBAC: Strict check — only roles with ingest:document (admin/editor) can upload
-    try:
-        user_role_str = getattr(current_user, "role", "viewer") or "viewer"
-        try:
-            role = Role(user_role_str)
-        except ValueError:
-            role = Role.VIEWER
-        allowed = ROLE_PERMISSIONS.get(role, set())
-        if Permission.INGEST_DOCUMENT not in allowed:
-            raise HTTPException(status_code=403, detail=f"Not enough permissions: role '{role.value}' cannot ingest. Requires ingest:document (editor/admin)")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.warning("RBAC check failed", error=str(e))
-        raise HTTPException(status_code=403, detail="Not enough permissions")
+    # Centralized RBAC via DB role (not JWT) — viewer now has ingest:document (permissive, tenant-isolated)
+    if not has_db_permission_for_user(current_user, Permission.INGEST_DOCUMENT):
+        raise HTTPException(status_code=403, detail=f"Not enough permissions: role '{getattr(current_user, 'role', 'viewer')}' cannot ingest. Requires ingest:document")
 
     # Sanitize filename — prevent path traversal and null bytes
     raw_name = file.filename or "upload.bin"
@@ -207,23 +194,15 @@ async def ingest_batch(
     current_user: Annotated[DBUser, Depends(get_current_user)] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Batch ingest — upload up to 10 files at once (ChatGPT/Gemini style).
+    """Batch ingest — upload up to 10 files at once (ChatGPT/Gemini style), tenant-isolated.
 
-    Each file is validated, deduped, and ingested independently. Partial failures
-    do not abort the batch; per-file status is returned.
+    Each file is validated, deduped (by content hash per tenant), and ingested independently.
+    Tenant is always `current_user.tenant_id` (DB canonical); stale JWT and cross-tenant spoofing rejected.
     """
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
-    # RBAC
-    try:
-        user_role_str = getattr(current_user, "role", "viewer") or "viewer"
-        role = Role(user_role_str)
-        if Permission.INGEST_DOCUMENT not in ROLE_PERMISSIONS.get(role, set()):
-            raise HTTPException(status_code=403, detail="Not enough permissions")
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
+    if not has_db_permission_for_user(current_user, Permission.INGEST_DOCUMENT):
+        raise HTTPException(status_code=403, detail="Not enough permissions: requires ingest:document")
 
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")

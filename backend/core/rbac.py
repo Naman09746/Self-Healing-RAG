@@ -63,6 +63,7 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
     Role.VIEWER: {
         Permission.QUERY_RAG,
         Permission.STREAM_RAG,
+        Permission.INGEST_DOCUMENT,
         Permission.VIEW_HEALTH,
     },
     Role.AUDITOR: {
@@ -102,6 +103,25 @@ def get_current_user_role(
     if token is None:
         return None
     return get_role_from_token(token)
+
+
+# ---------------------------------------------------------------------------
+# Helpers — DB-role canonical checks (permissive, tenant-isolated)
+# ---------------------------------------------------------------------------
+
+def has_permission(user_role: str | Role, permission: Permission) -> bool:
+    """Check if a DB role has a permission (DB is canonical source). Unknown roles deny."""
+    try:
+        role = user_role if isinstance(user_role, Role) else Role(str(user_role))
+    except ValueError:
+        return False
+    return permission in ROLE_PERMISSIONS.get(role, set())
+
+
+def has_db_permission_for_user(user, permission: Permission) -> bool:
+    """Check permission using DB user's role (not JWT). Stale JWT is ignored."""
+    role_str = getattr(user, "role", "viewer") or "viewer"
+    return has_permission(role_str, permission)
 
 
 # ---------------------------------------------------------------------------
