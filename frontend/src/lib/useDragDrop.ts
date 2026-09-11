@@ -9,21 +9,25 @@ function containsFiles(dataTransfer: DataTransfer | null): boolean {
   if (!dataTransfer) return false;
   const types = dataTransfer.types;
   if (!types || types.length === 0) return false;
-  if (Array.isArray(types)) {
-    return types.some(
-      (t) => t === "Files" || t === "application/x-moz-file" || t.toLowerCase().includes("file")
-    );
+  
+  const typeList = Array.isArray(types) ? types : (typeof types.includes === "function" ? types : Array.from(types));
+  
+  // Need to be careful not to trigger on simple text drags (text/plain, text/html)
+  // but allow IDE file drags which often use text/uri-list or custom types
+  for (let i = 0; i < typeList.length; i++) {
+    const t = typeList[i].toLowerCase();
+    if (
+      t === "files" || 
+      t === "application/x-moz-file" || 
+      t.includes("file") ||
+      t === "text/uri-list" || 
+      t.includes("code.tree") || // VS Code/IDE specific
+      t.includes("vscode") 
+    ) {
+      return true;
+    }
   }
-  if (typeof types.includes === "function") {
-    return (
-      types.includes("Files") ||
-      types.includes("application/x-moz-file") ||
-      types.includes("public.file-url")
-    );
-  }
-  return Array.from(types).some(
-    (t) => t === "Files" || t === "application/x-moz-file" || t.toLowerCase().includes("file")
-  );
+  return false;
 }
 
 export interface DragDropOptions {
