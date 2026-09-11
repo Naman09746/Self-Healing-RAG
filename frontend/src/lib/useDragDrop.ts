@@ -3,19 +3,27 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 
 /**
- * Checks whether a drag event contains external files (not text selection)
+ * Checks whether a drag event contains external files (not internal text drag)
  */
 function containsFiles(dataTransfer: DataTransfer | null): boolean {
   if (!dataTransfer) return false;
   const types = dataTransfer.types;
   if (!types || types.length === 0) return false;
   if (Array.isArray(types)) {
-    return types.some((t) => t === "Files" || t === "application/x-moz-file" || t.toLowerCase().includes("file"));
+    return types.some(
+      (t) => t === "Files" || t === "application/x-moz-file" || t.toLowerCase().includes("file")
+    );
   }
   if (typeof types.includes === "function") {
-    return types.includes("Files") || types.includes("application/x-moz-file");
+    return (
+      types.includes("Files") ||
+      types.includes("application/x-moz-file") ||
+      types.includes("public.file-url")
+    );
   }
-  return Array.from(types).some((t) => t === "Files" || t === "application/x-moz-file" || t.toLowerCase().includes("file"));
+  return Array.from(types).some(
+    (t) => t === "Files" || t === "application/x-moz-file" || t.toLowerCase().includes("file")
+  );
 }
 
 export interface DragDropOptions {
@@ -28,9 +36,9 @@ export interface DragDropOptions {
 }
 
 /**
- * Enterprise-grade full-page / container Drag & Drop hook
- * Zero flickering, cross-browser support (Chrome, Safari, Firefox, Edge),
- * Escape-key cancellation, and clean lifecycle tracking.
+ * Production-grade Drag & Drop hook
+ * Captures window & zone drops flawlessly, handles file extraction,
+ * prevents double-triggers, supports Esc key, and provides smooth UI state.
  */
 export function useDragDrop({
   onDrop,
@@ -43,6 +51,7 @@ export function useDragDrop({
   const [isDragging, setIsDragging] = useState(false);
   const [isHoveringZone, setIsHoveringZone] = useState(false);
   const dragCounter = useRef(0);
+  const lastDropTimestamp = useRef(0);
   const onDropRef = useRef(onDrop);
 
   useEffect(() => {
@@ -52,7 +61,7 @@ export function useDragDrop({
   const filterFiles = useCallback(
     (fileList: FileList | File[]): File[] => {
       let files = Array.from(fileList).filter((f) => f && f.size > 0 && !f.name.startsWith("."));
-      
+
       if (maxSizeBytes) {
         files = files.filter((f) => f.size <= maxSizeBytes);
       }
@@ -67,22 +76,85 @@ export function useDragDrop({
     [multiple, maxFiles, maxSizeBytes]
   );
 
-  // Global window listeners to prevent browser default drop (opening file in tab)
-  useEffect(() => {
-    if (disabled) return;
+  const processAndDispatchDrop = useCallback(
+    async (dataTransfer: DataTransfer | null) => {
+      // Debounce frame to prevent double dispatch between window & element
+      const now = Date.now();
+      if (now - lastDropTimestamp.current < 200) return;
+      lastDropTimestamp.current = now;
 
-    const handleWindowDragOver = (e: DragEvent) => {
-      e.preventDefault();
-      if (e.dataTransfer && containsFiles(e.dataTransfer)) {
-        e.dataTransfer.dropEffect = "copy";
-      }
-    };
-
-    const handleWindowDrop = (e: DragEvent) => {
-      e.preventDefault();
       dragCounter.current = 0;
       setIsDragging(false);
       setIsHoveringZone(false);
+
+      if (!dataTransfer) return;
+
+      let rawFiles: File[] = [];
+      if (dataTransfer.files && dataTransfer.files.length > 0) {
+        rawFiles = Array.from(dataTransfer.files);
+      } else if (dataTransfer.items) {
+        rawFiles = Array.from(dataTransfer.items)
+          .filter((it) => it.kind === "file")
+          .map((it) => it.getAsFile())
+          .filter(Boolean) as File[];
+      }
+
+      const validFiles = filterFiles(rawFiles);
+      if (validFiles.length > 0) {
+        try {
+          await onDropRef.current(validFiles);
+        } catch (err) {
+          console.error("useDragDrop onDrop failed:", err);
+        }
+      }
+    },
+    [filterFiles]
+  );
+
+  // Global window listeners for drag & drop
+  useEffect(() => {
+    if (disabled) return;
+
+    const handleWindowDragEnter = (e: DragEvent) => {
+      if (containsFiles(e.dataTransfer)) {
+        e.preventDefault();
+        dragCounter.current += 1;
+        setIsDragging(true);
+      }
+    };
+
+    const handleWindowDragOver = (e: DragEvent) => {
+      if (containsFiles(e.dataTransfer)) {
+        e.preventDefault();
+        if (e.dataTransfer) {
+          e.dataTransfer.dropEffect = "copy";
+        }
+        if (!isDragging) {
+          setIsDragging(true);
+        }
+      }
+    };
+
+    const handleWindowDragLeave = (e: DragEvent) => {
+      dragCounter.current -= 1;
+      // If mouse leaves the window entirely or counter resets
+      if (
+        dragCounter.current <= 0 ||
+        e.clientX <= 0 ||
+        e.clientY <= 0 ||
+        e.clientX >= window.innerWidth ||
+        e.clientY >= window.innerHeight
+      ) {
+        dragCounter.current = 0;
+        setIsDragging(false);
+        setIsHoveringZone(false);
+      }
+    };
+
+    const handleWindowDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await processAndDispatchDrop(e.dataTransfer);
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -93,119 +165,67 @@ export function useDragDrop({
       }
     };
 
+    window.addEventListener("dragenter", handleWindowDragEnter);
     window.addEventListener("dragover", handleWindowDragOver);
+    window.addEventListener("dragleave", handleWindowDragLeave);
     window.addEventListener("drop", handleWindowDrop);
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
+      window.removeEventListener("dragenter", handleWindowDragEnter);
       window.removeEventListener("dragover", handleWindowDragOver);
+      window.removeEventListener("dragleave", handleWindowDragLeave);
       window.removeEventListener("drop", handleWindowDrop);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [disabled]);
+  }, [disabled, isDragging, processAndDispatchDrop]);
 
-  const handleDragEnter = useCallback(
-    (e: React.DragEvent) => {
-      if (disabled) return;
-      e.preventDefault();
-      e.stopPropagation();
+  // React synthetic event handlers for specific zones
+  const handleZoneDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer && containsFiles(e.dataTransfer)) {
+      e.dataTransfer.dropEffect = "copy";
+      setIsHoveringZone(true);
+    }
+  }, []);
 
-      if (e.dataTransfer && containsFiles(e.dataTransfer)) {
-        e.dataTransfer.dropEffect = "copy";
-        dragCounter.current += 1;
-        setIsDragging(true);
-      }
-    },
-    [disabled]
-  );
+  const handleZoneDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer && containsFiles(e.dataTransfer)) {
+      e.dataTransfer.dropEffect = "copy";
+      setIsHoveringZone(true);
+    }
+  }, []);
 
-  const handleDragLeave = useCallback(
-    (e: React.DragEvent) => {
-      if (disabled) return;
-      e.preventDefault();
-      e.stopPropagation();
+  const handleZoneDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsHoveringZone(false);
+  }, []);
 
-      dragCounter.current -= 1;
-      if (dragCounter.current <= 0) {
-        dragCounter.current = 0;
-        setIsDragging(false);
-        setIsHoveringZone(false);
-      }
-    },
-    [disabled]
-  );
-
-  const handleDragOver = useCallback(
-    (e: React.DragEvent) => {
-      if (disabled) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (e.dataTransfer && containsFiles(e.dataTransfer)) {
-        e.dataTransfer.dropEffect = "copy";
-        if (!isDragging) {
-          setIsDragging(true);
-        }
-      }
-    },
-    [disabled, isDragging]
-  );
-
-  const handleDrop = useCallback(
+  const handleZoneDrop = useCallback(
     async (e: React.DragEvent) => {
-      if (disabled) return;
       e.preventDefault();
       e.stopPropagation();
-
-      dragCounter.current = 0;
-      setIsDragging(false);
-      setIsHoveringZone(false);
-
-      let files: File[] = [];
-      if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-        files = filterFiles(e.dataTransfer.files);
-      } else if (e.dataTransfer?.items) {
-        const items = Array.from(e.dataTransfer.items)
-          .filter((it) => it.kind === "file")
-          .map((it) => it.getAsFile())
-          .filter(Boolean) as File[];
-        files = filterFiles(items);
-      }
-
-      if (files.length > 0) {
-        await onDropRef.current(files);
-      }
+      await processAndDispatchDrop(e.dataTransfer);
     },
-    [disabled, filterFiles]
+    [processAndDispatchDrop]
   );
 
-  // Dedicated handlers for specific drop cards / zones
   const zoneDragHandlers = {
-    onDragEnter: (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsHoveringZone(true);
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    },
-    onDragLeave: (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsHoveringZone(false);
-    },
-    onDragOver: (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsHoveringZone(true);
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    },
-    onDrop: handleDrop,
+    onDragEnter: handleZoneDragEnter,
+    onDragOver: handleZoneDragOver,
+    onDragLeave: handleZoneDragLeave,
+    onDrop: handleZoneDrop,
   };
 
   const containerDragHandlers = {
-    onDragEnter: handleDragEnter,
-    onDragLeave: handleDragLeave,
-    onDragOver: handleDragOver,
-    onDrop: handleDrop,
+    onDragEnter: handleZoneDragEnter,
+    onDragOver: handleZoneDragOver,
+    onDragLeave: handleZoneDragLeave,
+    onDrop: handleZoneDrop,
   };
 
   return {
