@@ -143,7 +143,7 @@ interface UploadQueueItem {
     await refreshDocs();
   }, [refreshDocs, toast]);
 
-  const { isDragging, isHoveringZone, dragHandlers: queryDragHandlers, zoneDragHandlers } = useDragDrop({
+  const { isDragging, isHoveringZone, zoneDragHandlers } = useDragDrop({
     onDrop: handleDocumentUpload,
     multiple: true,
     maxFiles: 10,
@@ -296,51 +296,51 @@ interface UploadQueueItem {
   ) || [...messages].reverse().find((m) => m.role === "assistant");
 
   return (
-    <div
-      {...queryDragHandlers}
-      className="relative flex-1 flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden"
-    >
-      {/* ── Drag & Drop Full-Page Overlay — light glassy, never dark, smooth ── */}
-      {isDragging && (
+    <div className="relative flex-1 flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden">
+      {/* ── Drag & Drop Full-Page Overlay — permanently mounted in DOM, smooth CSS opacity transition ── */}
+      <div
+        className={`absolute inset-0 z-50 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md flex flex-col items-center justify-center p-6 transition-all duration-200 cursor-copy ${
+          isDragging
+            ? "opacity-100 pointer-events-auto visible"
+            : "opacity-0 pointer-events-none invisible"
+        }`}
+      >
         <div
-          {...queryDragHandlers}
-          className="absolute inset-0 z-50 bg-white/30 dark:bg-slate-900/20 backdrop-blur-[12px] flex flex-col items-center justify-center p-6 animate-in fade-in duration-200 cursor-copy"
+          className={`relative bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-3xl p-8 shadow-[0_24px_70px_rgba(37,99,235,0.25)] border-2 border-dashed border-blue-500/80 dark:border-blue-400/80 flex flex-col items-center text-center max-w-md mx-4 ring-8 ring-blue-500/10 dark:ring-blue-400/10 transition-transform duration-200 ${
+            isDragging ? "scale-100 translate-y-0" : "scale-95 translate-y-2"
+          }`}
         >
-          <div
-            className="relative bg-white/90 dark:bg-slate-900/75 backdrop-blur-2xl rounded-3xl p-8 shadow-[0_24px_70px_rgba(37,99,235,0.18)] border border-white/60 dark:border-slate-700/40 flex flex-col items-center text-center max-w-md mx-4 ring-1 ring-blue-200/40 dark:ring-blue-500/20 scale-100 animate-in zoom-in-95 duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-none"
-          >
-            {/* Soft floating icon — not bounce */}
-            <div className="relative mb-5">
-              <div className="absolute -inset-3 rounded-3xl bg-blue-500/10 dark:bg-blue-400/10 blur-xl" />
-              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-[0_8px_24px_rgba(37,99,235,0.25)] animate-[float_3s_ease-in-out_infinite]">
-                <Upload size={28} className="text-white" />
-              </div>
+          {/* Pulsing Radar Ring */}
+          <div className="relative mb-5">
+            <div className="absolute -inset-2 rounded-2xl bg-blue-500/20 dark:bg-blue-400/20 blur-sm animate-pulse" />
+            <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
+              <Upload size={28} className="text-white animate-bounce" />
             </div>
-
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-              Drop to Index Documents
-            </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 max-w-xs text-center leading-relaxed">
-              Release to automatically chunk, embed, and index into pgvector &amp; BM25
-            </p>
-
-            <div className="mt-5 flex flex-wrap justify-center gap-1.5 max-w-sm">
-              {["PDF", "DOCX", "PPTX", "XLSX", "CSV", "TXT", "MD", "JSON", "OCR"].map((fmt) => (
-                <span
-                  key={fmt}
-                  className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-[10px] font-semibold border border-blue-200/60 dark:border-blue-800/60"
-                >
-                  {fmt}
-                </span>
-              ))}
-            </div>
-            
-            <p className="text-[11px] text-slate-400 mt-4">
-              Press <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">Esc</kbd> to cancel
-            </p>
           </div>
+
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+            Release to Index Documents
+          </h3>
+          <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 max-w-xs text-center leading-relaxed">
+            Files will be parsed, chunked, and embedded into PostgreSQL pgvector &amp; BM25 in real time.
+          </p>
+
+          <div className="mt-5 flex flex-wrap justify-center gap-1.5 max-w-sm">
+            {["PDF", "DOCX", "PPTX", "XLSX", "CSV", "TXT", "MD", "JSON", "OCR"].map((fmt) => (
+              <span
+                key={fmt}
+                className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-[10px] font-semibold border border-blue-200/60 dark:border-blue-800/60"
+              >
+                {fmt}
+              </span>
+            ))}
+          </div>
+
+          <p className="text-[11px] text-slate-400 mt-4">
+            Press <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">Esc</kbd> to cancel
+          </p>
         </div>
-      )}
+      </div>
 
       {/* ── Left Column: Interactive Chat Console ──────────────── */}
       <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">

@@ -36,166 +36,169 @@ export interface DragDropOptions {
 }
 
 /**
- * Production-grade Drag & Drop hook
- * Captures window & zone drops flawlessly, handles file extraction,
- * prevents double-triggers, supports Esc key, and provides smooth UI state.
+ * Bulletproof Drag & Drop hook
+ * - Bound once on mount with zero re-binding churn
+ * - Unconditional preventDefault on dragover
+ * - Synchronous FileList extraction on drop
+ * - Full OS drag lifecycle and Esc cancel support
  */
-export function useDragDrop({
-  onDrop,
-  accept,
-  multiple = true,
-  maxFiles = 10,
-  maxSizeBytes = 50 * 1024 * 1024,
-  disabled = false,
-}: DragDropOptions) {
+export function useDragDrop(options: DragDropOptions) {
   const [isDragging, setIsDragging] = useState(false);
   const [isHoveringZone, setIsHoveringZone] = useState(false);
-  const dragCounter = useRef(0);
-  const lastDropTimestamp = useRef(0);
-  const onDropRef = useRef(onDrop);
-
+  
+  // Stable refs for options to prevent listener recreation
+  const optionsRef = useRef(options);
   useEffect(() => {
-    onDropRef.current = onDrop;
-  }, [onDrop]);
+    optionsRef.current = options;
+  }, [options]);
 
-  const filterFiles = useCallback(
-    (fileList: FileList | File[]): File[] => {
-      let files = Array.from(fileList).filter((f) => f && f.size > 0 && !f.name.startsWith("."));
+  const dragDepthRef = useRef(0);
+  const isDraggingRef = useRef(false);
 
-      if (maxSizeBytes) {
-        files = files.filter((f) => f.size <= maxSizeBytes);
-      }
-      if (!multiple) {
-        files = files.slice(0, 1);
-      }
-      if (files.length > maxFiles) {
-        files = files.slice(0, maxFiles);
-      }
-      return files;
-    },
-    [multiple, maxFiles, maxSizeBytes]
-  );
-
-  const processAndDispatchDrop = useCallback(
-    async (dataTransfer: DataTransfer | null) => {
-      // Debounce frame to prevent double dispatch between window & element
-      const now = Date.now();
-      if (now - lastDropTimestamp.current < 200) return;
-      lastDropTimestamp.current = now;
-
-      dragCounter.current = 0;
-      setIsDragging(false);
-      setIsHoveringZone(false);
-
-      if (!dataTransfer) return;
-
-      let rawFiles: File[] = [];
-      if (dataTransfer.files && dataTransfer.files.length > 0) {
-        rawFiles = Array.from(dataTransfer.files);
-      } else if (dataTransfer.items) {
-        rawFiles = Array.from(dataTransfer.items)
-          .filter((it) => it.kind === "file")
-          .map((it) => it.getAsFile())
-          .filter(Boolean) as File[];
-      }
-
-      const validFiles = filterFiles(rawFiles);
-      if (validFiles.length > 0) {
-        try {
-          await onDropRef.current(validFiles);
-        } catch (err) {
-          console.error("useDragDrop onDrop failed:", err);
+  // Extract and filter valid files from DataTransfer
+  const extractFiles = useCallback((dataTransfer: DataTransfer | null): File[] => {
+    if (!dataTransfer) return [];
+    
+    let rawFiles: File[] = [];
+    if (dataTransfer.files && dataTransfer.files.length > 0) {
+      rawFiles = Array.from(dataTransfer.files);
+    } else if (dataTransfer.items && dataTransfer.items.length > 0) {
+      for (let i = 0; i < dataTransfer.items.length; i++) {
+        const item = dataTransfer.items[i];
+        if (item.kind === "file") {
+          const file = item.getAsFile();
+          if (file) rawFiles.push(file);
         }
       }
-    },
-    [filterFiles]
-  );
+    }
 
-  // Global window listeners for drag & drop
+    const { multiple = true, maxFiles = 10, maxSizeBytes = 50 * 1024 * 1024 } = optionsRef.current;
+    let files = rawFiles.filter((f) => f && f.size > 0 && !f.name.startsWith("."));
+    
+    if (maxSizeBytes) {
+      files = files.filter((f) => f.size <= maxSizeBytes);
+    }
+    if (!multiple) {
+      files = files.slice(0, 1);
+    }
+    if (files.length > maxFiles) {
+      files = files.slice(0, maxFiles);
+    }
+    return files;
+  }, []);
+
+  // Window-level event listeners — BOUND ONCE ON MOUNT
   useEffect(() => {
-    if (disabled) return;
-
-    const handleWindowDragEnter = (e: DragEvent) => {
+    const handleDragEnter = (e: DragEvent) => {
+      if (optionsRef.current.disabled) return;
       if (containsFiles(e.dataTransfer)) {
         e.preventDefault();
-        dragCounter.current += 1;
-        setIsDragging(true);
-      }
-    };
-
-    const handleWindowDragOver = (e: DragEvent) => {
-      if (containsFiles(e.dataTransfer)) {
-        e.preventDefault();
-        if (e.dataTransfer) {
-          e.dataTransfer.dropEffect = "copy";
-        }
-        if (!isDragging) {
+        dragDepthRef.current += 1;
+        if (!isDraggingRef.current) {
+          isDraggingRef.current = true;
           setIsDragging(true);
         }
       }
     };
 
-    const handleWindowDragLeave = (e: DragEvent) => {
-      dragCounter.current -= 1;
-      // If mouse leaves the window entirely or counter resets
+    const handleDragOver = (e: DragEvent) => {
+      if (optionsRef.current.disabled) return;
+      // CRITICAL: MUST ALWAYS preventDefault on dragover for drop to fire in browser
+      e.preventDefault();
+      if (e.dataTransfer) {
+        try {
+          e.dataTransfer.dropEffect = "copy";
+        } catch {}
+      }
+      if (containsFiles(e.dataTransfer) && !isDraggingRef.current) {
+        isDraggingRef.current = true;
+        setIsDragging(true);
+      }
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      if (optionsRef.current.disabled) return;
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      
+      // If mouse completely left window
       if (
-        dragCounter.current <= 0 ||
+        dragDepthRef.current === 0 ||
         e.clientX <= 0 ||
         e.clientY <= 0 ||
         e.clientX >= window.innerWidth ||
         e.clientY >= window.innerHeight
       ) {
-        dragCounter.current = 0;
+        dragDepthRef.current = 0;
+        isDraggingRef.current = false;
         setIsDragging(false);
         setIsHoveringZone(false);
       }
     };
 
-    const handleWindowDrop = async (e: DragEvent) => {
+    const handleDrop = async (e: DragEvent) => {
+      if (optionsRef.current.disabled) return;
       e.preventDefault();
       e.stopPropagation();
-      await processAndDispatchDrop(e.dataTransfer);
+
+      dragDepthRef.current = 0;
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      setIsHoveringZone(false);
+
+      const files = extractFiles(e.dataTransfer);
+      if (files.length > 0 && optionsRef.current.onDrop) {
+        try {
+          await optionsRef.current.onDrop(files);
+        } catch (err) {
+          console.error("useDragDrop onDrop handler failed:", err);
+        }
+      }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        dragCounter.current = 0;
+        dragDepthRef.current = 0;
+        isDraggingRef.current = false;
         setIsDragging(false);
         setIsHoveringZone(false);
       }
     };
 
-    window.addEventListener("dragenter", handleWindowDragEnter);
-    window.addEventListener("dragover", handleWindowDragOver);
-    window.addEventListener("dragleave", handleWindowDragLeave);
-    window.addEventListener("drop", handleWindowDrop);
+    window.addEventListener("dragenter", handleDragEnter);
+    window.addEventListener("dragover", handleDragOver);
+    window.addEventListener("dragleave", handleDragLeave);
+    window.addEventListener("drop", handleDrop);
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.removeEventListener("dragenter", handleWindowDragEnter);
-      window.removeEventListener("dragover", handleWindowDragOver);
-      window.removeEventListener("dragleave", handleWindowDragLeave);
-      window.removeEventListener("drop", handleWindowDrop);
+      window.removeEventListener("dragenter", handleDragEnter);
+      window.removeEventListener("dragover", handleDragOver);
+      window.removeEventListener("dragleave", handleDragLeave);
+      window.removeEventListener("drop", handleDrop);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [disabled, isDragging, processAndDispatchDrop]);
+  }, [extractFiles]);
 
-  // React synthetic event handlers for specific zones
+  // Synthetic event handlers for localized target zones
   const handleZoneDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer && containsFiles(e.dataTransfer)) {
-      e.dataTransfer.dropEffect = "copy";
-      setIsHoveringZone(true);
+    setIsHoveringZone(true);
+    if (e.dataTransfer) {
+      try {
+        e.dataTransfer.dropEffect = "copy";
+      } catch {}
     }
   }, []);
 
   const handleZoneDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer && containsFiles(e.dataTransfer)) {
-      e.dataTransfer.dropEffect = "copy";
-      setIsHoveringZone(true);
+    setIsHoveringZone(true);
+    if (e.dataTransfer) {
+      try {
+        e.dataTransfer.dropEffect = "copy";
+      } catch {}
     }
   }, []);
 
@@ -209,9 +212,21 @@ export function useDragDrop({
     async (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      await processAndDispatchDrop(e.dataTransfer);
+      dragDepthRef.current = 0;
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      setIsHoveringZone(false);
+
+      const files = extractFiles(e.dataTransfer);
+      if (files.length > 0 && optionsRef.current.onDrop) {
+        try {
+          await optionsRef.current.onDrop(files);
+        } catch (err) {
+          console.error("useDragDrop zone drop failed:", err);
+        }
+      }
     },
-    [processAndDispatchDrop]
+    [extractFiles]
   );
 
   const zoneDragHandlers = {
@@ -221,18 +236,10 @@ export function useDragDrop({
     onDrop: handleZoneDrop,
   };
 
-  const containerDragHandlers = {
-    onDragEnter: handleZoneDragEnter,
-    onDragOver: handleZoneDragOver,
-    onDragLeave: handleZoneDragLeave,
-    onDrop: handleZoneDrop,
-  };
-
   return {
     isDragging,
     isHoveringZone,
-    dragHandlers: containerDragHandlers,
     zoneDragHandlers,
-    filterFiles,
+    extractFiles,
   };
 }
