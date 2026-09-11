@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import {
   Upload,
   FileText,
@@ -13,37 +13,48 @@ import {
 } from "lucide-react";
 import { useDocuments } from "@/lib/hooks";
 import { useToast } from "@/components/Toast";
+import { useDragDrop } from "@/lib/useDragDrop";
 
 export function DocumentVault() {
   const { documents, loading, uploading, upload, remove } = useDocuments();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [dragOver, setDragOver] = useState(false);
 
   const filteredDocs = documents.filter((doc) =>
     doc.filename.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleFilesUpload = async (files: FileList | File[]) => {
-    const fileList = Array.from(files);
-    if (!fileList.length) return;
-    
-    let successCount = 0;
-    for (const file of fileList) {
-      try {
-        await upload(file);
-        successCount++;
-      } catch (err) {
-        const raw = (err as Error).message || "Upload failed";
-        const clean = raw.length > 120 ? `${raw.slice(0, 117)}...` : raw;
-        toast.error(`Failed to ingest "${file.name}": ${clean}`);
+  const handleFilesUpload = useCallback(
+    async (files: FileList | File[]) => {
+      const fileList = Array.from(files as FileList);
+      if (!fileList.length) return;
+
+      let successCount = 0;
+      for (const file of fileList) {
+        try {
+          await upload(file);
+          successCount++;
+        } catch (err) {
+          const raw = (err as Error).message || "Upload failed";
+          const clean = raw.length > 120 ? `${raw.slice(0, 117)}...` : raw;
+          toast.error(`Failed to ingest "${file.name}": ${clean}`);
+        }
       }
-    }
-    if (successCount > 0) {
-      toast.success(`Successfully indexed ${successCount} document${successCount > 1 ? "s" : ""} into vector & sparse storage.`);
-    }
-  };
+      if (successCount > 0) {
+        toast.success(
+          `Successfully indexed ${successCount} document${successCount > 1 ? "s" : ""} into vector & sparse storage.`
+        );
+      }
+    },
+    [upload, toast]
+  );
+
+  const { isDragOverZone: dragOver, dragHandlers } = useDragDrop({
+    onDrop: handleFilesUpload,
+    multiple: true,
+    maxFiles: 10,
+  });
 
   const handleRemove = async (id: string, name: string) => {
     if (!confirm(`Delete "${name}" from the vector store?`)) return;
@@ -108,38 +119,16 @@ export function DocumentVault() {
           </div>
         </div>
 
-        {/* Drag and drop target area — light glassy, never dark */}
+        {/* Drag and drop target area — light glassy, never dark — unified hook */}
         <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setDragOver(true);
-          }}
-          onDragEnter={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setDragOver(true);
-          }}
-          onDragLeave={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            // Only unset if leaving the drop zone itself (not child)
-            if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
-              setDragOver(false);
-            }
-          }}
-          onDrop={async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setDragOver(false);
-            if (e.dataTransfer.files?.length) {
-              await handleFilesUpload(e.dataTransfer.files);
-            }
-          }}
+          {...dragHandlers}
           onClick={() => fileInputRef.current?.click()}
-          className={`mt-4 relative overflow-hidden border-2 border-dashed rounded-2xl p-7 text-center cursor-pointer transition-all duration-300 ${
+          role="region"
+          aria-label="File drop zone"
+          aria-dropeffect="copy"
+          className={`mt-4 relative overflow-hidden border-2 border-dashed rounded-2xl p-7 text-center cursor-pointer transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             dragOver
-              ? "border-blue-400/60 bg-gradient-to-br from-white/85 via-blue-50/40 to-indigo-50/30 dark:from-slate-900/70 dark:via-blue-950/20 dark:to-indigo-950/10 backdrop-blur-xl shadow-[0_12px_40px_rgba(37,99,235,0.15)] ring-1 ring-blue-200/40 dark:ring-blue-500/20 scale-[1.02]"
+              ? "border-blue-400/60 bg-gradient-to-br from-white/90 via-blue-50/50 to-indigo-50/20 dark:from-slate-800/60 dark:via-blue-900/15 dark:to-indigo-900/10 backdrop-blur-2xl shadow-[0_16px_48px_rgba(37,99,235,0.18)] ring-1 ring-blue-200/50 dark:ring-blue-500/25 scale-[1.02]"
               : "border-slate-200/60 dark:border-slate-700/50 bg-white/60 dark:bg-slate-800/30 backdrop-blur-md hover:border-slate-300/80 dark:hover:border-slate-600/50 hover:bg-white/80 dark:hover:bg-slate-800/50 hover:shadow-[0_4px_20px_rgba(15,23,42,0.06)] dark:hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)]"
           }`}
         >

@@ -30,6 +30,7 @@ import {
 import { query as queryApi, documents as docsApi, type QueryResponse, type RetrievedChunk } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { useDocuments } from "@/lib/hooks";
+import { useDragDrop } from "@/lib/useDragDrop";
 
 interface ChatMessage {
   id: string;
@@ -75,8 +76,6 @@ interface UploadQueueItem {
 }
 
   // Document Drag & Drop + Manual Selection State
-  const [isDragging, setIsDragging] = useState(false);
-  const dragCounter = useRef(0);
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
   const [recentUploads, setRecentUploads] = useState<string[]>([]);
   const [selectedDocNames, setSelectedDocNames] = useState<string[]>([]);
@@ -93,7 +92,7 @@ interface UploadQueueItem {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const handleDocumentUpload = async (files: FileList | File[]) => {
+  const handleDocumentUpload = useCallback(async (files: FileList | File[]) => {
     const fileList = Array.from(files);
     if (!fileList.length) return;
 
@@ -142,7 +141,13 @@ interface UploadQueueItem {
     }
 
     await refreshDocs();
-  };
+  }, [refreshDocs, toast]);
+
+  const { isDragging, dragHandlers: queryDragHandlers } = useDragDrop({
+    onDrop: handleDocumentUpload,
+    multiple: true,
+    maxFiles: 10,
+  });
 
   const removeQueueItem = (id: string) => {
     setUploadQueue((prev) => prev.filter((u) => u.id !== id));
@@ -292,50 +297,23 @@ interface UploadQueueItem {
 
   return (
     <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-      onDragEnter={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounter.current += 1;
-        if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-          setIsDragging(true);
-        }
-      }}
-      onDragLeave={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounter.current -= 1;
-        if (dragCounter.current <= 0) {
-          dragCounter.current = 0;
-          setIsDragging(false);
-        }
-      }}
-      onDrop={async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounter.current = 0;
-        setIsDragging(false);
-        if (e.dataTransfer.files?.length) {
-          await handleDocumentUpload(e.dataTransfer.files);
-        }
-      }}
+      {...queryDragHandlers}
       className="relative flex-1 flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden"
     >
-      {/* ── Drag & Drop Full-Page Overlay ── */}
+      {/* ── Drag & Drop Full-Page Overlay — light glassy, never dark ── */}
       {isDragging && (
-        <div className="absolute inset-0 z-50 bg-blue-600/90 dark:bg-blue-900/90 backdrop-blur-xs flex flex-col items-center justify-center text-white p-6 border-4 border-dashed border-white/60 animate-in fade-in duration-150 pointer-events-none">
-          <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-4 animate-bounce">
-            <Upload size={32} />
-          </div>
-          <h3 className="text-lg font-bold">Drop Documents Here to Index</h3>
-          <p className="text-xs text-white/80 mt-1 max-w-sm text-center">
-            Files will be automatically chunked, embedded, and added to the PostgreSQL pgvector &amp; sparse search indexes.
-          </p>
-          <div className="mt-4 px-3 py-1 rounded-full bg-white/10 text-[11px] font-mono">
-            PDF, Markdown (.md), DOCX, TXT, CSV, JSON
+        <div className="absolute inset-0 z-50 bg-white/30 dark:bg-slate-900/20 backdrop-blur-[12px] flex flex-col items-center justify-center p-6 animate-in fade-in duration-200 pointer-events-none">
+          <div className="bg-white/90 dark:bg-slate-900/80 backdrop-blur-2xl rounded-3xl p-8 shadow-[0_20px_60px_rgba(37,99,235,0.18)] border border-white/60 dark:border-slate-700/50 flex flex-col items-center text-center max-w-sm mx-4 ring-1 ring-blue-200/30 dark:ring-blue-500/20">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center mb-4 shadow-[0_8px_24px_rgba(37,99,235,0.3)] animate-bounce">
+              <Upload size={28} className="text-white" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Drop Documents Here to Index</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1.5 max-w-sm text-center leading-relaxed">
+              Files will be automatically chunked, embedded, and added to the PostgreSQL pgvector &amp; sparse search indexes.
+            </p>
+            <div className="mt-4 px-3.5 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[11px] font-medium border border-blue-200/60 dark:border-blue-800/50">
+              PDF • DOCX • PPTX • XLSX • CSV • TXT • MD • HTML • Images (OCR)
+            </div>
           </div>
         </div>
       )}
@@ -561,29 +539,16 @@ interface UploadQueueItem {
               {/* Quick Drop Zone Box for Empty State */}
               <div
                 onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onDragEnter={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onDrop={async (e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (e.dataTransfer.files?.length) {
-                    await handleDocumentUpload(e.dataTransfer.files);
-                  }
-                }}
-                className="mt-6 w-full p-4 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 bg-slate-50/50 dark:bg-slate-950/50 cursor-pointer transition-colors"
+                className="mt-6 w-full p-5 rounded-2xl border-2 border-dashed border-slate-200/60 dark:border-slate-700/50 bg-white/60 dark:bg-slate-800/30 backdrop-blur-md hover:border-blue-300 dark:hover:border-blue-500/50 hover:bg-white/80 dark:hover:bg-slate-800/50 hover:shadow-[0_4px_20px_rgba(15,23,42,0.06)] cursor-pointer transition-all duration-300 text-center"
               >
-                <Upload size={18} className="mx-auto text-slate-400 mb-1" />
-                <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Drag &amp; drop test files here, or click to upload
+                <div className="w-10 h-10 mx-auto rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/50 dark:border-slate-700/50 flex items-center justify-center mb-2">
+                  <Upload size={16} className="text-slate-500 dark:text-slate-400" />
                 </div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  Drop your test markdown (.md) or PDF files directly into the query studio
+                <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  Drag &amp; drop files here, or click to browse
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+                  PDF, DOCX, PPTX, XLSX, CSV, TXT, MD, HTML, JSON + images (OCR) — up to 50 MB
                 </div>
               </div>
 
@@ -755,12 +720,12 @@ interface UploadQueueItem {
 
         {/* Input Bar */}
         <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2.5">
-          {/* Hidden File Input */}
+          {/* Hidden File Input — all backend-supported types */}
           <input
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.docx,.doc,.txt,.md,.json,.jsonl,.csv"
+            accept=".pdf,.docx,.doc,.odt,.rtf,.pptx,.ppt,.xlsx,.xls,.ods,.csv,.tsv,.html,.htm,.xml,.json,.jsonl,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp,.tiff,.tif,.bmp,.gif,.epub"
             className="hidden"
             onChange={async (e) => {
               if (e.target.files?.length) {
