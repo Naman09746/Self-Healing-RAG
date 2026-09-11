@@ -35,9 +35,14 @@ async def list_documents(
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
     tenant_id = current_user.tenant_id or current_user.user_uuid
-    stmt = select(DBDocument).where(DBDocument.tenant_id == tenant_id).order_by(DBDocument.created_at.desc()).limit(limit).offset(offset)
-    result = await db.execute(stmt)
-    docs = result.scalars().all()
+    docs = []
+    try:
+        stmt = select(DBDocument).where(DBDocument.tenant_id == tenant_id).order_by(DBDocument.created_at.desc()).limit(limit).offset(offset)
+        result = await db.execute(stmt)
+        docs = result.scalars().all()
+    except Exception as db_err:
+        logger.warning("Could not load DBDocument records from relational store", error=str(db_err))
+        docs = []
 
     return [
         DocumentResponse(

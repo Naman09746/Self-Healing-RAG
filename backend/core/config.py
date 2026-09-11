@@ -133,6 +133,8 @@ class Settings(BaseSettings):
     # CORS Settings
     CORS_ORIGINS: Union[list[str], str] = Field(
         default=[
+            "*",
+            "https://self-healing-rag-omega.vercel.app",
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "http://localhost:5173",

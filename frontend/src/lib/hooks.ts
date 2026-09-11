@@ -65,10 +65,16 @@ export function useDocuments() {
   const fetch = useCallback(async () => {
     try {
       const result = await docsApi.list();
-      setDocuments(result);
+      setDocuments(Array.isArray(result) ? result : []);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message || "";
+      if (msg.includes("401") || msg.includes("credentials") || msg.includes("Unauthorized")) {
+        setDocuments([]);
+        setError(null);
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -251,18 +257,24 @@ export function useAuth() {
 
   useEffect(() => {
     const check = async () => {
-      const authed = isAuthenticated();
-      setAuthenticated(authed);
-      if (authed) {
-        try {
-          const profile = await authApi.profile();
-          setUser(profile);
-        } catch {
-          clearTokens();
-          setAuthenticated(false);
-        }
+      const token = getAccessToken();
+      if (!token) {
+        setAuthenticated(false);
+        setUser(null);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+      setAuthenticated(true);
+      try {
+        const profile = await authApi.profile();
+        setUser(profile);
+      } catch {
+        clearTokens();
+        setAuthenticated(false);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     };
     check();
   }, []);

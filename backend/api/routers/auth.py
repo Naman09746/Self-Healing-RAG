@@ -79,6 +79,9 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if not token:
+        raise credentials_exception
+
     try:
         payload = decode_access_token(token)
         email: str = payload.get("sub")
@@ -87,9 +90,14 @@ async def get_current_user(
     except Exception:
         raise credentials_exception
         
-    result = await db.execute(select(DBUser).where(DBUser.email == email))
-    user = result.scalar_one_or_none()
-    if user is None:
+    try:
+        result = await db.execute(select(DBUser).where(DBUser.email == email))
+        user = result.scalar_one_or_none()
+    except Exception as e:
+        logger.error("Database error during get_current_user", error=str(e))
+        raise credentials_exception
+
+    if user is None or not user.is_active:
         raise credentials_exception
     
     return user
@@ -104,7 +112,7 @@ async def signup(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
             detail="A user with this email already exists"
         )
     
-    # Create new user with immutable user_uuid and default role
+    # Create new user with immutable user_uuid and default editor role so they can query and ingest
     user_uuid = str(uuid.uuid4())
     tenant_id = user_in.tenant_id or user_uuid  # If no tenant specified, user_uuid = tenant_id
     full_name = user_in.full_name or user_in.name or ""
@@ -114,7 +122,7 @@ async def signup(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
         full_name=full_name,
         user_uuid=user_uuid,
         tenant_id=tenant_id,
-        role=Role.VIEWER.value,
+        role=Role.EDITOR.value,
     )
     db.add(db_user)
     await db.commit()

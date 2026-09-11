@@ -137,15 +137,32 @@ app.add_middleware(ConcurrencyControlMiddleware)
 cors_kwargs = {
     "allow_methods": ["*"],
     "allow_headers": ["*"],
+    "allow_credentials": True,
 }
-if "*" in settings.CORS_ORIGINS:
+if "*" in settings.CORS_ORIGINS or any("vercel.app" in str(o) for o in settings.CORS_ORIGINS):
     cors_kwargs["allow_origin_regex"] = r"^https?://.*"
-    cors_kwargs["allow_credentials"] = True
 else:
-    cors_kwargs["allow_origins"] = settings.CORS_ORIGINS
-    cors_kwargs["allow_credentials"] = True
+    cors_kwargs["allow_origin_regex"] = r"^https?://(localhost|127\.0\.0\.1|.*\.vercel\.app|.*\.onrender\.com)(:\d+)?$"
+    cors_kwargs["allow_origins"] = list(set(settings.CORS_ORIGINS + ["https://self-healing-rag-omega.vercel.app"]))
 
 app.add_middleware(CORSMiddleware, **cors_kwargs)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Global exception handler ensuring 500 error responses always contain CORS headers."""
+    logger.error("Unhandled API exception", error=str(exc), path=request.url.path, method=request.method)
+    from fastapi.responses import JSONResponse
+    origin = request.headers.get("origin", "*")
+    response = JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal Server Error: {str(exc)}", "type": type(exc).__name__},
+    )
+    response.headers["Access-Control-Allow-Origin"] = origin if origin else "*"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 
 app.include_router(auth.router, prefix=settings.API_V1_STR)
