@@ -27,7 +27,7 @@ export function DocumentVault() {
 
   const handleFilesUpload = useCallback(
     async (files: FileList | File[]) => {
-      const fileList = Array.from(files as FileList);
+      const fileList = Array.isArray(files) ? files : Array.from(files as FileList);
       if (!fileList.length) return;
 
       let successCount = 0;

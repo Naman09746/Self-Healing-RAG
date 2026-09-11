@@ -300,29 +300,28 @@ interface UploadQueueItem {
       {...queryDragHandlers}
       className="relative flex-1 flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] overflow-hidden"
     >
-      {/* ── Drag & Drop Full-Page Overlay — ultra-smooth, interactive & zero-flicker ── */}
+      {/* ── Drag & Drop Full-Page Overlay — light glassy, never dark, smooth ── */}
       {isDragging && (
         <div
           {...queryDragHandlers}
-          className="absolute inset-0 z-50 bg-slate-950/40 dark:bg-slate-950/70 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in fade-in duration-200 cursor-copy"
+          className="absolute inset-0 z-50 bg-white/30 dark:bg-slate-900/20 backdrop-blur-[12px] flex flex-col items-center justify-center p-6 animate-in fade-in duration-200 cursor-copy"
         >
           <div
-            {...queryDragHandlers}
-            className="relative bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl rounded-3xl p-8 shadow-[0_24px_70px_rgba(37,99,235,0.25)] border-2 border-dashed border-blue-500/80 dark:border-blue-400/80 flex flex-col items-center text-center max-w-md mx-4 ring-8 ring-blue-500/10 dark:ring-blue-400/10 scale-100 animate-in zoom-in-95 duration-150"
+            className="relative bg-white/90 dark:bg-slate-900/75 backdrop-blur-2xl rounded-3xl p-8 shadow-[0_24px_70px_rgba(37,99,235,0.18)] border border-white/60 dark:border-slate-700/40 flex flex-col items-center text-center max-w-md mx-4 ring-1 ring-blue-200/40 dark:ring-blue-500/20 scale-100 animate-in zoom-in-95 duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-none"
           >
-            {/* Pulsing Radar Ring */}
+            {/* Soft floating icon — not bounce */}
             <div className="relative mb-5">
-              <div className="absolute -inset-2 rounded-2xl bg-blue-500/20 dark:bg-blue-400/20 blur-sm animate-pulse" />
-              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
-                <Upload size={28} className="text-white animate-bounce" />
+              <div className="absolute -inset-3 rounded-3xl bg-blue-500/10 dark:bg-blue-400/10 blur-xl" />
+              <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-[0_8px_24px_rgba(37,99,235,0.25)] animate-[float_3s_ease-in-out_infinite]">
+                <Upload size={28} className="text-white" />
               </div>
             </div>
 
             <h3 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-              Release to Index Documents
+              Drop to Index Documents
             </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 max-w-xs text-center leading-relaxed">
-              Files will be parsed, chunked, and embedded into PostgreSQL pgvector &amp; BM25 in real time.
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 max-w-xs text-center leading-relaxed">
+              Release to automatically chunk, embed, and index into pgvector &amp; BM25
             </p>
 
             <div className="mt-5 flex flex-wrap justify-center gap-1.5 max-w-sm">
