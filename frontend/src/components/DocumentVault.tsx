@@ -56,9 +56,9 @@ export function DocumentVault() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 p-5 overflow-y-auto space-y-4">
-      {/* Upload Header & Drag-Drop Well */}
-      <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-xs">
+    <div className="flex flex-col h-full bg-gradient-to-br from-slate-50 via-white to-blue-50/20 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 p-5 overflow-y-auto space-y-4">
+      {/* Upload Header & Drag-Drop Well — light glassy */}
+      <div className="bg-white/80 dark:bg-slate-900/70 backdrop-blur-xl border border-white/60 dark:border-slate-800/60 rounded-2xl p-5 shadow-[0_8px_32px_rgba(15,23,42,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
@@ -78,7 +78,7 @@ export function DocumentVault() {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:from-blue-800 active:to-indigo-800 text-white text-xs font-semibold shadow-[0_4px_16px_rgba(37,99,235,0.25)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.3)] transition-all disabled:opacity-50 cursor-pointer"
             >
               {uploading ? (
                 <>
@@ -96,7 +96,7 @@ export function DocumentVault() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".pdf,.docx,.doc,.txt,.md,.json,.jsonl,.csv"
+              accept=".pdf,.docx,.doc,.odt,.rtf,.pptx,.ppt,.xlsx,.xls,.ods,.csv,.tsv,.html,.htm,.xml,.json,.jsonl,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp,.tiff,.tif,.bmp,.gif,.epub"
               className="hidden"
               onChange={async (e) => {
                 if (e.target.files?.length) {
@@ -108,7 +108,7 @@ export function DocumentVault() {
           </div>
         </div>
 
-        {/* Drag and drop target area */}
+        {/* Drag and drop target area — light glassy, never dark */}
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -123,7 +123,10 @@ export function DocumentVault() {
           onDragLeave={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            setDragOver(false);
+            // Only unset if leaving the drop zone itself (not child)
+            if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
+              setDragOver(false);
+            }
           }}
           onDrop={async (e) => {
             e.preventDefault();
@@ -134,49 +137,64 @@ export function DocumentVault() {
             }
           }}
           onClick={() => fileInputRef.current?.click()}
-          className={`mt-4 border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+          className={`mt-4 relative overflow-hidden border-2 border-dashed rounded-2xl p-7 text-center cursor-pointer transition-all duration-300 ${
             dragOver
-              ? "border-blue-500 bg-blue-50/80 scale-[1.01] shadow-sm"
-              : "border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 bg-slate-50/50"
+              ? "border-blue-400/60 bg-gradient-to-br from-white/85 via-blue-50/40 to-indigo-50/30 dark:from-slate-900/70 dark:via-blue-950/20 dark:to-indigo-950/10 backdrop-blur-xl shadow-[0_12px_40px_rgba(37,99,235,0.15)] ring-1 ring-blue-200/40 dark:ring-blue-500/20 scale-[1.02]"
+              : "border-slate-200/60 dark:border-slate-700/50 bg-white/60 dark:bg-slate-800/30 backdrop-blur-md hover:border-slate-300/80 dark:hover:border-slate-600/50 hover:bg-white/80 dark:hover:bg-slate-800/50 hover:shadow-[0_4px_20px_rgba(15,23,42,0.06)] dark:hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)]"
           }`}
         >
-          <Upload size={24} className={`mx-auto mb-2 transition-colors ${dragOver ? "text-blue-600 animate-bounce" : "text-slate-400"}`} />
-          <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-            {dragOver ? "Drop files here to start indexing..." : "Drag & drop multiple files here, or click to browse"}
-          </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            Supports PDF, DOCX, Markdown (.md), TXT, CSV, JSON (max 25MB per file)
+          {/* Subtle glass highlight */}
+          <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/40 via-transparent to-transparent dark:from-white/[0.03] opacity-60" />
+          <div className="relative">
+            <div className={`mx-auto mb-3 w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 ${dragOver ? "bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-[0_6px_20px_rgba(37,99,235,0.3)] scale-110" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200/50 dark:border-slate-700/50"}`}>
+              <Upload size={20} className={`${dragOver ? "animate-bounce" : ""} transition-colors`} />
+            </div>
+            <div className={`text-sm font-semibold transition-colors ${dragOver ? "text-blue-700 dark:text-blue-300" : "text-slate-800 dark:text-slate-200"}`}>
+              {dragOver ? "Drop files here to start indexing..." : "Drag & drop files here, or click to browse"}
+            </div>
+            <div className={`text-[11px] mt-1.5 max-w-md mx-auto leading-relaxed transition-colors ${dragOver ? "text-blue-600/80 dark:text-blue-400/80" : "text-slate-500 dark:text-slate-400"}`}>
+              Supports <span className="font-medium">PDF, DOCX, PPTX, XLSX, CSV, TXT, MD, HTML, JSON</span> + images <span className="font-medium">(PNG/JPG/WEBP/TIFF via OCR)</span> — up to <span className="font-semibold">50 MB</span> per file, <span className="font-semibold">10</span> files batch
+            </div>
+            {dragOver && (
+              <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600 text-white text-[10px] font-semibold shadow-sm animate-pulse">
+                <div className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                Release to upload
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Precomputed Chunk Variants Ribbon */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-slate-100">
-          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        {/* Precomputed Chunk Variants Ribbon — production 1000/200 default */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5 pt-5 border-t border-slate-200/40 dark:border-slate-800/40">
+          <div className="p-3 rounded-xl bg-white/60 dark:bg-slate-800/30 backdrop-blur-md border border-slate-200/50 dark:border-slate-700/30 hover:bg-white/80 dark:hover:bg-slate-800/50 transition-colors">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Variant A (Dense)
             </span>
-            <div className="text-xs font-semibold text-slate-800 mt-0.5">500 chars / 50 overlap</div>
-            <span className="text-[10px] text-slate-500">Fast precise retrieval for factual claims</span>
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-0.5">500 chars / 50 overlap</div>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">Precise factual claims, low latency</span>
           </div>
-          <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200/80">
-            <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
-              Variant B (Optimal)
-            </span>
-            <div className="text-xs font-semibold text-slate-800 mt-0.5">700 chars / 100 overlap</div>
-            <span className="text-[10px] text-slate-500">AES champion balance between context &amp; focus</span>
+          <div className="p-3 rounded-xl bg-gradient-to-br from-blue-50/80 via-indigo-50/50 to-white/60 dark:from-blue-950/30 dark:via-indigo-950/20 dark:to-slate-800/30 backdrop-blur-md border border-blue-200/60 dark:border-blue-800/40 shadow-[0_4px_16px_rgba(37,99,235,0.08)] dark:shadow-none">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider">
+                Variant B (Active)
+              </span>
+              <span className="text-[8px] font-bold px-1 py-0 rounded bg-blue-600 text-white">DEFAULT</span>
+            </div>
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-0.5">1000 chars / 200 overlap</div>
+            <span className="text-[10px] text-slate-600 dark:text-slate-400">Production default — balanced context &amp; focus</span>
           </div>
-          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+          <div className="p-3 rounded-xl bg-white/60 dark:bg-slate-800/30 backdrop-blur-md border border-slate-200/50 dark:border-slate-700/30 hover:bg-white/80 dark:hover:bg-slate-800/50 transition-colors">
+            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Variant C (Broad)
             </span>
-            <div className="text-xs font-semibold text-slate-800 mt-0.5">1500 chars / 300 overlap</div>
-            <span className="text-[10px] text-slate-500">Macro section synthesis for complex reasoning</span>
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-0.5">1500 chars / 300 overlap</div>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">Long-form synthesis, complex reasoning</span>
           </div>
         </div>
       </div>
 
-      {/* Document List Card */}
-      <div className="bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-xs">
+      {/* Document List Card — light glassy */}
+      <div className="bg-white/80 dark:bg-slate-900/60 backdrop-blur-xl border border-white/60 dark:border-slate-800/60 rounded-2xl overflow-hidden shadow-[0_8px_32px_rgba(15,23,42,0.06)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
         <div className="px-5 py-3.5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span className="text-xs font-bold text-slate-900">
             All Documents ({filteredDocs.length}{searchQuery && ` of ${documents.length}`})

@@ -1,9 +1,12 @@
 import asyncio
 import time
-import psycopg
+try:
+    import psycopg
+except ImportError:
+    psycopg = None
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph.checkpoint.postgres import PostgresSaver
 from backend.core.config import settings
 from backend.core.logging import setup_logging, get_logger
 from backend.api.routers import ingest, query, auth, websocket, documents, experiments

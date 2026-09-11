@@ -9,7 +9,7 @@ Replaces single-batch LLM call with parallel per-claim verification:
 
 import json
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from opentelemetry import trace
 
 from backend.core.logging import get_logger

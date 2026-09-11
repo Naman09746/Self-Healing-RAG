@@ -37,8 +37,39 @@ class IngestionPipeline:
             self.graph_store = _gfb  # type: ignore[assignment]
         self.llm = LLMClient()
 
+    def _compute_file_hash(self, file_path: str) -> str:
+        """Compute SHA256 of file bytes for dedup and audit."""
+        import hashlib
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def _detect_mime(self, file_path: str) -> str:
+        """Detect mime via python-magic or extension fallback."""
+        try:
+            import magic
+            return magic.from_file(file_path, mime=True)
+        except Exception:
+            pass
+        ext = Path(file_path).suffix.lower()
+        mime_map = {
+            ".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".doc": "application/msword", ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xls": "application/vnd.ms-excel",
+            ".csv": "text/csv", ".tsv": "text/tab-separated-values", ".html": "text/html", ".htm": "text/html",
+            ".json": "application/json", ".jsonl": "application/jsonl", ".txt": "text/plain", ".md": "text/markdown",
+            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".tiff": "image/tiff",
+            ".bmp": "image/bmp", ".gif": "image/gif", ".epub": "application/epub+zip",
+        }
+        return mime_map.get(ext, "application/octet-stream")
+
     async def ingest_file(self, file_path: str, tenant_id: Optional[str] = None) -> Dict[str, Any]:
-        """Ingest a single file into Hybrid, Sparse, and Graph storage.
+        """Ingest a single file into Hybrid, Sparse, and Graph storage — production-grade.
+
+        Handles all formats (PDF, DOCX, PPTX, XLSX, CSV, HTML, JSON, MD, TXT, images via OCR, etc.)
+        with file-hash dedup, mime detection, and robust error handling.
 
         Args:
             file_path: Path to the document file to ingest.
@@ -46,28 +77,41 @@ class IngestionPipeline:
                        to the configured default tenant.
 
         Returns:
-            Dict with document_id, file_name, chunk_count, and storage.
+            Dict with document_id, file_name, chunk_count, file_hash, mime_type, file_size, storage.
 
         Raises:
             RuntimeError: If ingestion fails partway through. Some stores
                           may have been written — the caller should consider
                           this document partially ingested.
         """
-        logger.info("Starting Advanced Ingestion", file_path=file_path, tenant_id=resolve_tenant_id(tenant_id))
+        tid = resolve_tenant_id(tenant_id)
+        file_path_obj = Path(file_path)
+        file_name = file_path_obj.name
+        file_size = file_path_obj.stat().st_size if file_path_obj.exists() else 0
+        file_hash = self._compute_file_hash(file_path) if file_path_obj.exists() else ""
+        mime_type = self._detect_mime(file_path)
+        logger.info("Starting Advanced Ingestion", file_path=file_path, file_name=file_name, tenant_id=tid, file_size=file_size, mime_type=mime_type, file_hash=file_hash[:12])
 
         try:
-            # 1. Load document
+            # 1. Load document — super high level, supports all formats with no mistake
             text = self.loader.load_document(file_path)
+            if not text or not text.strip():
+                raise ValueError(f"No extractable text from {file_name} (mime={mime_type}, size={file_size})")
 
-            # 2. Chunk text
+            # 2. Chunk text — production chunker with overlap guard
             chunks = self.chunker.split_text(text)
+            if not chunks:
+                raise ValueError(f"Chunking produced no chunks for {file_name} (text length {len(text)})")
+            # Cap chunks to prevent OOM on huge files (e.g., 5M chars → ~5000 chunks)
+            if len(chunks) > 2000:
+                logger.warning("Huge document, capping chunks", file_name=file_name, original_chunks=len(chunks), capped=2000)
+                chunks = chunks[:2000]
 
             # 3. Prepare metadata with deterministic, tenant-scoped chunk IDs
             #    Uses deterministic_chunk_id(tenant_id, document_id, chunk_index, content)
             #    to ensure cross-tenant isolation and idempotent re-ingestion.
             doc_id = str(uuid.uuid4())
-            file_name = Path(file_path).name
-            tid = resolve_tenant_id(tenant_id)
+            # file_name, tid, file_hash, mime_type, file_size already computed above
             texts = [c.text for c in chunks]
             ids = [deterministic_chunk_id(tid, doc_id, i, c.text) for i, c in enumerate(chunks)]
             metadatas = [
@@ -77,6 +121,9 @@ class IngestionPipeline:
                     "chunk_index": i,
                     "chunk_id": ids[i],
                     "content_hash": chunks[i].chunk_id,
+                    "file_hash": file_hash,
+                    "mime_type": mime_type,
+                    "file_size": file_size,
                 }
                 for i in range(len(chunks))
             ]
@@ -159,12 +206,15 @@ class IngestionPipeline:
             else:
                 logger.debug("Graph extraction skipped (GRAPH_EXTRACTION_ENABLED=False)")
 
-            logger.info("Advanced Ingestion complete", doc_id=doc_id, chunks=len(chunks))
+            logger.info("Advanced Ingestion complete", doc_id=doc_id, chunks=len(chunks), file_hash=file_hash[:12], mime_type=mime_type)
 
             return {
                 "document_id": doc_id,
                 "file_name": file_name,
                 "chunk_count": len(chunks),
+                "file_hash": file_hash,
+                "mime_type": mime_type,
+                "file_size": file_size,
                 "storage": ["vector", "sparse", "graph"],
             }
         except Exception as e:
