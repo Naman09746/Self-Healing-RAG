@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, AliasChoices
 from typing import Any, Union
 
 
@@ -49,8 +49,14 @@ class Settings(BaseSettings):
         description="Custom base URL for OpenAI-compatible API (e.g. https://api.groq.com/openai/v1)."
     )
     OLLAMA_HOST: str = Field(default="http://localhost:11434")
-    MODEL_NAME: str = Field(default="llama3.2:1b")
-    SMALL_MODEL_NAME: str = Field(default="llama3.2:1b")
+    MODEL_NAME: str = Field(
+        default="llama3.2:1b",
+        validation_alias=AliasChoices("MODEL_NAME", "LLM_MODEL"),
+    )
+    SMALL_MODEL_NAME: str = Field(
+        default="llama3.2:1b",
+        validation_alias=AliasChoices("SMALL_MODEL_NAME", "LLM_SMALL_MODEL"),
+    )
     EMBEDDING_MODEL: str = Field(default="nomic-embed-text")
     LLM_TIMEOUT: int = Field(default=30, description="Hard timeout for LLM calls in seconds.")
 
