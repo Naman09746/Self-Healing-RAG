@@ -23,6 +23,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.main import app
+from backend.graph.state import GenerationResult
 from backend.api.routers.auth import get_current_user
 from backend.storage.db.models import User as DBUser
 
@@ -46,7 +47,7 @@ def dummy_user() -> DBUser:
 class _DummyGraph:
     """Minimal LangGraph stub as used by the unit tests."""
 
-    async def astream(self, state, stream_mode="values"):
+    async def astream(self, state, config=None, stream_mode="values"):
         phases = ["intake", "planning", "retrieval", "generation", "critic", "completed"]
         chunks = [{"content": "ctx", "score": 0.9}]
         for phase in phases:
@@ -56,7 +57,7 @@ class _DummyGraph:
                 "current_phase": phase,
                 "retry_count": 0,
                 "retrieved_chunks": chunks if phase not in ("intake", "planning") else [],
-                "generation_result": {"answer": "Hello world!"},
+                "generation_result": GenerationResult(answer="Hello world!", model="test-model"),
             }
             if phase == "generation" and state._token_queue is not None:
                 for token in ["Hello", " ", "world", "!"]:

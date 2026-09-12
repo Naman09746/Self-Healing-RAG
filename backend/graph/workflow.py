@@ -63,7 +63,7 @@ def create_rag_graph(deps, checkpointer=None):
         "critic",
         should_heal,
         {
-            "output": "evaluation",
+            "output": "output",
             "targeted_healing": "healing",
             "retrieval_expansion": "healing",
             "aggressive_rewrite": "healing",

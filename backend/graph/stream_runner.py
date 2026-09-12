@@ -242,13 +242,14 @@ async def stream_rag_pipeline(
 
     # ---- final metadata event -------------------------------------------
     if final_state:
-        gen_result = final_state.get("generation_result") or {}
+        gen_result = final_state.get("generation_result")
+        gen_answer = getattr(gen_result, "answer", "") if gen_result else ""
         yield _sse(
             "metadata",
             {
                 "session_id": session_id,
                 "query": final_state.get("query", query),
-                "answer": final_state.get("final_answer") or gen_result.get("answer", ""),
+                "answer": final_state.get("final_answer") or gen_answer,
                 "chunks_retrieved": len(final_state.get("retrieved_chunks", [])),
                 "status": final_state.get("current_phase", "completed"),
                 "grounding_score": final_state.get("grounding_score", 0.0),

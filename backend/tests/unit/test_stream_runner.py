@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from backend.graph.stream_runner import stream_rag_pipeline
+from backend.graph.state import GenerationResult
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +98,7 @@ class _DummyGraph:
                 "current_phase": phase,
                 "retry_count": 0,
                 "retrieved_chunks": chunks if phase != "intake" and phase != "planning" else [],
-                "generation_result": {"answer": "Hello world!"},
+                "generation_result": GenerationResult(answer="Hello world!", model="test-model"),
             }
             # Simulate what the real generation node does: push tokens to
             # the token queue so the stream_runner can pick them up.

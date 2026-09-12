@@ -25,9 +25,8 @@ def _is_model_error(exc: Exception) -> bool:
             "not have access",
             "not_found",
             "404",
-            "model",
         )
-    )
+    ) and "rate limit" not in err_str and "overloaded" not in err_str
 
 
 def _normalize_model_name(model: str, base_url: str = "", api_key: str = "", provider: str = "") -> str:
@@ -139,13 +138,14 @@ class LLMClient:
     async def _execute_openai_chat(self, kwargs: dict) -> str:
         """Execute chat completion with automatic model fallback on any model error."""
         models_to_try = [kwargs["model"]]
-        candidates = [
-            "llama-3.3-70b-versatile",
-            "gemma2-9b-it",
-            "llama-3.1-8b-instant",
-            "gpt-4o-mini",
-            "gpt-4o",
-        ]
+        
+        if self.provider == "openai":
+            candidates = ["gpt-4o-mini", "gpt-4o"]
+        elif self.provider == "openrouter":
+            candidates = ["meta-llama/llama-3.1-8b-instruct:free", "google/gemma-2-9b-it:free"]
+        else:
+            candidates = ["llama-3.3-70b-versatile", "gemma2-9b-it", "llama-3.1-8b-instant"]
+
         for c in candidates:
             if c not in models_to_try:
                 models_to_try.append(c)
@@ -176,13 +176,14 @@ class LLMClient:
     async def _execute_openai_stream(self, kwargs: dict) -> AsyncGenerator[str, None]:
         """Execute chat stream with automatic model fallback on any model error."""
         models_to_try = [kwargs["model"]]
-        candidates = [
-            "llama-3.3-70b-versatile",
-            "gemma2-9b-it",
-            "llama-3.1-8b-instant",
-            "gpt-4o-mini",
-            "gpt-4o",
-        ]
+        
+        if self.provider == "openai":
+            candidates = ["gpt-4o-mini", "gpt-4o"]
+        elif self.provider == "openrouter":
+            candidates = ["meta-llama/llama-3.1-8b-instruct:free", "google/gemma-2-9b-it:free"]
+        else:
+            candidates = ["llama-3.3-70b-versatile", "gemma2-9b-it", "llama-3.1-8b-instant"]
+
         for c in candidates:
             if c not in models_to_try:
                 models_to_try.append(c)
