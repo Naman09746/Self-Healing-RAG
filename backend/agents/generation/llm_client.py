@@ -120,7 +120,7 @@ class LLMClient:
             try:
                 from openai import AsyncOpenAI
                 default_headers = {}
-                if is_openrouter or self.provider in ("openrouter", "openrouter_ai") or "openrouter.ai" in (base_url or ""):
+                if self.provider in ("openrouter", "openrouter_ai") or "openrouter.ai" in (base_url or ""):
                     default_headers = {
                         "HTTP-Referer": "https://self-healing-rag.onrender.com",
                         "X-Title": "Self-Healing RAG",
