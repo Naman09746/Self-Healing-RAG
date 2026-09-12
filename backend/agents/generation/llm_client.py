@@ -11,12 +11,15 @@ from backend.core.observability import get_tracer, get_langsmith_client
 logger = get_logger(__name__)
 
 
-def _normalize_model_name(model: str, base_url: str = "", api_key: str = "") -> str:
-    """Normalize local Ollama model names to provider-specific names if using OpenAI/Groq."""
-    if not model:
-        return "llama-3.1-8b-instant"
+def _normalize_model_name(model: str, base_url: str = "", api_key: str = "", provider: str = "") -> str:
+    """Normalize local Ollama model names to provider-specific names if using OpenAI/Groq/OpenRouter."""
     base = (base_url or "").lower()
-    is_groq = "groq.com" in base or (api_key or "").startswith("gsk_")
+    prov = (provider or "").lower()
+    key = api_key or ""
+
+    is_groq = "groq.com" in base or key.startswith("gsk_") or prov in ("groq", "groqcloud")
+    is_openrouter = "openrouter.ai" in base or key.startswith("sk-or-") or prov in ("openrouter", "openrouter_ai")
+    is_openai = "openai.com" in base or prov == "openai" or (not is_groq and not is_openrouter and bool(key))
 
     if is_groq:
         groq_mapping = {
@@ -27,23 +30,39 @@ def _normalize_model_name(model: str, base_url: str = "", api_key: str = "") -> 
             "llama3.1": "llama-3.1-8b-instant",
             "llama3:8b": "llama-3.1-8b-instant",
             "llama3": "llama-3.1-8b-instant",
+            "llama-3.1-8b": "llama-3.1-8b-instant",
             "llama3:70b": "llama-3.3-70b-versatile",
             "llama3.3:70b": "llama-3.3-70b-versatile",
             "llama3.3": "llama-3.3-70b-versatile",
+            "llama-3.3-70b": "llama-3.3-70b-versatile",
             "mistral": "mixtral-8x7b-32768",
             "mistral:7b": "mixtral-8x7b-32768",
             "gemma2": "gemma2-9b-it",
             "gemma2:9b": "gemma2-9b-it",
         }
+        if not model:
+            return "llama-3.1-8b-instant"
         if model in groq_mapping:
             return groq_mapping[model]
         if ":" in model:
             clean = model.replace(":", "-")
             return groq_mapping.get(clean, "llama-3.1-8b-instant")
-    elif "openai.com" in base or (api_key or "").startswith("sk-proj-") or (api_key or "").startswith("sk-"):
-        if any(tag in model.lower() for tag in ("llama", "nomic", "mistral", "gemma")):
+        return model
+
+    elif is_openai:
+        # If calling OpenAI direct, normalize Ollama tags or llama tags to gpt-4o-mini / gpt-4o
+        if not model or any(tag in model.lower() for tag in ("llama", "nomic", "mistral", "gemma", "ollama", "qwen", ":")):
+            if "70b" in (model or "").lower():
+                return "gpt-4o"
             return "gpt-4o-mini"
-    return model
+        return model
+
+    elif is_openrouter:
+        if not model or ":" in model:
+            return "meta-llama/llama-3.1-8b-instruct:free"
+        return model
+
+    return model or "llama3.2:1b"
 
 
 class LLMClient:
@@ -60,19 +79,38 @@ class LLMClient:
         self._async_client = None
 
         raw_model = model or settings.MODEL_NAME
-        self.model = raw_model
+        api_key = getattr(settings, "OPENAI_API_KEY", "") or ""
+        base_url = getattr(settings, "OPENAI_BASE_URL", "") or ""
 
-        if self.provider in ("openai", "groq", "openrouter") or bool(getattr(settings, "OPENAI_API_KEY", None)):
+        # Auto-configure base_url if provider or api_key indicates Groq or OpenRouter
+        if not base_url:
+            if self.provider in ("groq", "groqcloud") or api_key.startswith("gsk_"):
+                base_url = "https://api.groq.com/openai/v1"
+            elif self.provider in ("openrouter", "openrouter_ai") or api_key.startswith("sk-or-"):
+                base_url = "https://openrouter.ai/api/v1"
+
+        if self.provider in ("openai", "groq", "groqcloud", "openrouter") or bool(api_key):
             try:
                 from openai import AsyncOpenAI
-                api_key = getattr(settings, "OPENAI_API_KEY", "") or "sk-dummy"
-                base_url = getattr(settings, "OPENAI_BASE_URL", "") or None
-                self._openai_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-                self.model = _normalize_model_name(raw_model, base_url=base_url or "", api_key=api_key)
+                self._openai_client = AsyncOpenAI(api_key=api_key or "sk-dummy", base_url=base_url or None)
+                self.model = _normalize_model_name(
+                    raw_model,
+                    base_url=base_url or "",
+                    api_key=api_key,
+                    provider=self.provider,
+                )
+                logger.info(
+                    "Initialized AsyncOpenAI client",
+                    provider=self.provider,
+                    base_url=base_url or "https://api.openai.com/v1",
+                    model=self.model,
+                )
             except Exception as e:
                 logger.warning("Could not initialize AsyncOpenAI, falling back to Ollama", error=str(e))
+                self.model = raw_model
                 self._async_client = ollama.AsyncClient(host=self.host)
         else:
+            self.model = raw_model
             self._async_client = ollama.AsyncClient(host=self.host)
 
     @retry(
