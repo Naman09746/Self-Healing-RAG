@@ -31,7 +31,40 @@ CLAIMS:
 
             try:
                 response = await self.client.generate(prompt, format="json")
-                claims = json.loads(response)
+                # Parse JSON robustly
+                parsed = None
+                try:
+                    start = response.find("[")
+                    end = response.rfind("]") + 1
+                    if start >= 0 and end > start:
+                        parsed = json.loads(response[start:end])
+                except Exception:
+                    pass
+                if parsed is None:
+                    try:
+                        start = response.find("{")
+                        end = response.rfind("}") + 1
+                        if start >= 0 and end > start:
+                            parsed = json.loads(response[start:end])
+                        else:
+                            parsed = json.loads(response)
+                    except Exception:
+                        parsed = json.loads(response)
+
+                claims: List[str] = []
+                if isinstance(parsed, list):
+                    claims = [str(c).strip() for c in parsed if str(c).strip()]
+                elif isinstance(parsed, dict):
+                    for k in ("claims", "facts", "statements", "result", "items", "data"):
+                        if k in parsed and isinstance(parsed[k], list):
+                            claims = [str(c).strip() for c in parsed[k] if str(c).strip()]
+                            break
+                    else:
+                        claims = [str(v).strip() for v in parsed.values() if isinstance(v, str) and str(v).strip()]
+
+                if not claims:
+                    claims = [answer]
+
                 span.set_attribute("claims_count", len(claims))
                 span.set_status(trace.Status(trace.StatusCode.OK))
                 logger.info("Claims extracted", count=len(claims))

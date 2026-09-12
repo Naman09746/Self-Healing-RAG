@@ -81,10 +81,12 @@ class LLMClient:
         retry=retry_if_exception_type(Exception),
         reraise=True,
     )
-    async def generate(self, prompt: str, format: str = None) -> str:
+    async def generate(self, prompt: str, format: str = None, max_tokens: int = None) -> str:
         """Generate with retry logic, hard timeout, and OTel + LangSmith tracing."""
         tracer = get_tracer()
         logger.info("LLM Request", model=self.model)
+
+        token_limit = max_tokens or (512 if format == "json" else 1536)
 
         # LangSmith run tracking
         ls_client = get_langsmith_client()
@@ -108,7 +110,7 @@ class LLMClient:
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.1,
-                        "max_tokens": 512,
+                        "max_tokens": token_limit,
                     }
                     if format == "json":
                         kwargs["response_format"] = {"type": "json_object"}
@@ -123,7 +125,7 @@ class LLMClient:
                         "prompt": prompt,
                         "keep_alive": "10m",
                         "options": {
-                            "num_predict": 512,
+                            "num_predict": token_limit,
                             "temperature": 0.1,
                         },
                     }
@@ -166,7 +168,7 @@ class LLMClient:
                 raise
 
     async def generate_stream(
-        self, prompt: str, format: str = None
+        self, prompt: str, format: str = None, max_tokens: int = None
     ) -> AsyncGenerator[str, None]:
         """Stream tokens from the LLM via Ollama or OpenAI-compatible async streaming API.
 
@@ -177,13 +179,14 @@ class LLMClient:
             Decoded text tokens as the model produces them.
         """
         logger.info("LLM Streaming request", model=self.model)
+        token_limit = max_tokens or (512 if format == "json" else 1536)
         try:
             if self._openai_client is not None:
                 kwargs: dict = {
                     "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.1,
-                    "max_tokens": 512,
+                    "max_tokens": token_limit,
                     "stream": True,
                 }
                 if format == "json":

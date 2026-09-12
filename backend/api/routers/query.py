@@ -199,7 +199,7 @@ async def query_rag_stream(
             logger.info("Client disconnected from SSE stream", session_id=user_session_id)
         except Exception as exc:
             logger.error("SSE stream failed", error=str(exc))
-            yield f"event: error\ndata: {exc!s}\n\n"
+            yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
 
     return StreamingResponse(
         event_generator(),

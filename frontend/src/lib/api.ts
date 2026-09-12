@@ -306,6 +306,11 @@ export const query = {
 
           let currentEvent = "";
           for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed === "") {
+              currentEvent = "";
+              continue;
+            }
             if (line.startsWith("event: ")) {
               currentEvent = line.slice(7).trim();
               continue;
@@ -328,7 +333,9 @@ export const query = {
                   callbacks.onComplete(parsed);
                 }
               } catch {
-                // Partial JSON — skip
+                if (currentEvent === "error") {
+                  callbacks.onError?.(new Error(data || "Streaming error"));
+                }
               }
             }
           }

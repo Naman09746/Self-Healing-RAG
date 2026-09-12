@@ -170,18 +170,35 @@ class GroundingVerifier:
             prompt = _VERIFY_CLAIMS_BATCH_PROMPT.format(context=context, claims_formatted=claims_formatted)
 
             response = await self.client.generate(prompt, format="json")
-            start = response.find("[")
-            end = response.rfind("]") + 1
-            if start < 0 or end <= start:
+            raw_data = None
+            try:
+                start_arr = response.find("[")
+                end_arr = response.rfind("]") + 1
+                if start_arr >= 0 and end_arr > start_arr:
+                    raw_data = json.loads(response[start_arr:end_arr])
+                else:
+                    start_obj = response.find("{")
+                    end_obj = response.rfind("}") + 1
+                    if start_obj >= 0 and end_obj > start_obj:
+                        obj = json.loads(response[start_obj:end_obj])
+                    else:
+                        obj = json.loads(response)
+                    if isinstance(obj, dict):
+                        for k in ("verdicts", "claims", "results", "evaluations", "items", "data"):
+                            if isinstance(obj.get(k), list):
+                                raw_data = obj[k]
+                                break
+            except Exception:
                 return None
 
-            raw_data = json.loads(response[start:end])
             if not isinstance(raw_data, list) or len(raw_data) != len(claims):
                 return None
 
             verdicts: List[ClaimVerdict] = []
             for i, claim in enumerate(claims):
                 item = raw_data[i]
+                if not isinstance(item, dict):
+                    return None
                 verdict_str = str(item.get("verdict", "UNSUPPORTED")).upper()
                 if verdict_str not in {v.value for v in Verdict}:
                     verdict_str = "UNSUPPORTED"
