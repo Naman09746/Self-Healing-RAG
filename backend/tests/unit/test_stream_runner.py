@@ -86,7 +86,7 @@ class _DummyGraph:
     def __init__(self, *, fail: bool = False):
         self._fail = fail
 
-    async def astream(self, state, stream_mode="values"):
+    async def astream(self, state, config=None, stream_mode="values"):
         """Yield a sequence of state snapshots."""
         phases = ["intake", "planning", "retrieval", "generation", "critic", "completed"]
         chunks = [{"content": "ctx", "score": 0.9}]
@@ -206,7 +206,7 @@ class TestStreamRagPipeline:
         """CancelledError should be caught so the SSE generator doesn't crash."""
 
         class _CancellingGraph:
-            async def astream(self, state, stream_mode="values"):
+            async def astream(self, state, *args, **kwargs):
                 yield {"query": state.query, "current_phase": "intake", "retry_count": 0}
                 raise asyncio.CancelledError()
 
@@ -238,6 +238,37 @@ class TestStreamRagPipeline:
         assert "answer" in meta["data"]
         # The generation_result's answer is "Hello world!"
         assert "world" in meta["data"]["answer"]
+
+    def test_langgraph_checkpointer_compatibility(self):
+        """Verify stream_rag_pipeline passes configurable thread_id to LangGraph with MemorySaver."""
+        from langgraph.graph import StateGraph, END
+        from langgraph.checkpoint.memory import MemorySaver
+        from backend.graph.state import RAGState
+
+        wf = StateGraph(RAGState)
+        def dummy_node(state):
+            return {"current_phase": "completed", "final_answer": "Checkpointer success"}
+        wf.add_node("dummy", dummy_node)
+        wf.set_entry_point("dummy")
+        wf.add_edge("dummy", END)
+
+        # Compile WITH checkpointer (which strictly requires thread_id in config)
+        compiled_graph = wf.compile(checkpointer=MemorySaver())
+
+        events = _collect(
+            stream_rag_pipeline(
+                compiled_graph,
+                _DummyDeps(cache_hit=False),
+                "checkpointer query",
+                session_id="sess_checkpointer_1",
+            )
+        )
+        parsed = _parse_sse_events(events)
+        error_events = [p for p in parsed if p["event"] == "error"]
+        assert len(error_events) == 0, f"Expected no error, got: {error_events}"
+        meta = [p for p in parsed if p["event"] == "metadata"]
+        assert len(meta) == 1
+        assert meta[0]["data"]["answer"] == "Checkpointer success"
 
 
 if __name__ == "__main__":

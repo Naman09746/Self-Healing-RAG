@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import uuid
 from typing import AsyncGenerator, Any
 
 from backend.core.logging import get_logger
@@ -159,8 +160,9 @@ async def stream_rag_pipeline(
     async def _run_graph() -> None:
         """Drive the RAG graph via astream, pushing phase events."""
         nonlocal final_state
+        config = {"configurable": {"thread_id": session_id or str(uuid.uuid4())}}
         try:
-            async for step in graph.astream(state, stream_mode="values"):
+            async for step in graph.astream(state, config=config, stream_mode="values"):
                 final_state = step
                 phase = step.get("current_phase", "")
                 if phase:

@@ -117,8 +117,9 @@ async def run_rag_pipeline(
         logger.info("Executing RAG pipeline", query=query, session_id=session_id)
 
         final_state = initial_state
+        config = {"configurable": {"thread_id": session_id}}
         try:
-            async for event in graph.astream(initial_state, stream_mode="values"):
+            async for event in graph.astream(initial_state, config=config, stream_mode="values"):
                 final_state = event
                 phase = event.get("current_phase", "unknown")
 

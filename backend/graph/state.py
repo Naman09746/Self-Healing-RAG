@@ -22,7 +22,7 @@ from typing import (
 _T = TypeVar("_T")
 
 
-class BoundedList(UserList[_T], Generic[_T]):
+class BoundedList(list, Generic[_T]):
     """A list that never exceeds *maxlen* items.
 
     When append/extend would exceed *maxlen* the oldest items are dropped.
@@ -31,7 +31,7 @@ class BoundedList(UserList[_T], Generic[_T]):
 
     def __init__(
         self,
-        maxlen: int,
+        maxlen: int = 50,
         initlist: Optional[Union[List[_T], "BoundedList[_T]"]] = None,
     ):
         if maxlen < 1:
@@ -40,21 +40,29 @@ class BoundedList(UserList[_T], Generic[_T]):
         super().__init__(initlist or [])
         self._truncate()
 
+    @property
+    def data(self) -> List[_T]:
+        return self
+
     def _truncate(self) -> None:
-        if len(self.data) > self.maxlen:
-            self.data[: len(self.data) - self.maxlen] = []
+        maxlen = getattr(self, "maxlen", None)
+        if maxlen is not None and len(self) > maxlen:
+            self[: len(self) - maxlen] = []
 
     def append(self, item: _T) -> None:
-        if len(self.data) >= self.maxlen:
-            self.data.pop(0)
-        self.data.append(item)
+        maxlen = getattr(self, "maxlen", None)
+        if maxlen is not None and len(self) >= maxlen:
+            self.pop(0)
+        super().append(item)
 
     def extend(self, other: Union[List[_T], "BoundedList[_T]"]) -> None:
         items: List[_T] = list(other)
-        overflow = len(self.data) + len(items) - self.maxlen
-        if overflow > 0:
-            del self.data[:overflow]
-        self.data.extend(items)
+        maxlen = getattr(self, "maxlen", None)
+        if maxlen is not None:
+            overflow = len(self) + len(items) - maxlen
+            if overflow > 0:
+                del self[:overflow]
+        super().extend(items)
         self._truncate()
 
     def __iadd__(self, other: Union[List[_T], "BoundedList[_T]"]) -> "BoundedList[_T]":
@@ -68,36 +76,40 @@ class BoundedList(UserList[_T], Generic[_T]):
 
     def __radd__(self, other: Union[List[_T], "BoundedList[_T]"]) -> "BoundedList[_T]":
         if isinstance(other, list):
-            merged = BoundedList[_T](maxlen=self.maxlen, initlist=other)
+            merged = BoundedList[_T](maxlen=getattr(self, "maxlen", 50), initlist=other)
             merged.extend(self)
             return merged
         return self.__add__(other)
 
     def copy(self) -> "BoundedList[_T]":
-        return BoundedList[_T](maxlen=self.maxlen, initlist=list(self.data))
+        return BoundedList[_T](maxlen=getattr(self, "maxlen", 50), initlist=list(self))
 
     def __copy__(self) -> "BoundedList[_T]":
         return self.copy()
 
     def __deepcopy__(self, memo: dict) -> "BoundedList[_T]":
-        return BoundedList[_T](maxlen=self.maxlen, initlist=copy.deepcopy(self.data, memo))
+        return BoundedList[_T](maxlen=getattr(self, "maxlen", 50), initlist=copy.deepcopy(list(self), memo))
 
     def to_list(self) -> List[_T]:
-        return list(self.data)
+        return list(self)
 
     @classmethod
     def from_list(cls, items: List[_T], maxlen: int) -> "BoundedList[_T]":
         return cls(maxlen=maxlen, initlist=items)
 
+    def __reduce__(self):
+        return (self.__class__, (getattr(self, "maxlen", 50), list(self)))
+
     def __getstate__(self) -> dict:
-        return {"maxlen": self.maxlen, "data": self.data}
+        return {"maxlen": getattr(self, "maxlen", 50), "data": list(self)}
 
     def __setstate__(self, state: dict) -> None:
-        self.maxlen = state["maxlen"]
-        self.data = state["data"]
+        self.maxlen = state.get("maxlen", 50)
+        self.clear()
+        super().extend(state.get("data", []))
 
     def __repr__(self) -> str:
-        return f"BoundedList(maxlen={self.maxlen}, items={list(self.data)})"
+        return f"BoundedList(maxlen={getattr(self, 'maxlen', 50)}, items={list(self)})"
 
     def __str__(self) -> str:
         return repr(self)
@@ -133,6 +145,23 @@ def _coerce_bounded_list(v: Any, maxlen: int) -> BoundedList:
     if isinstance(v, list):
         return BoundedList(maxlen=maxlen, initlist=v)
     raise TypeError(f"Expected list or BoundedList, got {type(v).__name__}")
+
+
+_TOKEN_QUEUES: dict[str, Any] = {}
+
+
+def register_token_queue(session_id: str, queue: Any) -> None:
+    if session_id:
+        _TOKEN_QUEUES[session_id] = queue
+
+
+def unregister_token_queue(session_id: str) -> None:
+    if session_id:
+        _TOKEN_QUEUES.pop(session_id, None)
+
+
+def get_token_queue(session_id: str) -> Optional[Any]:
+    return _TOKEN_QUEUES.get(session_id) if session_id else None
 
 
 class RAGState(BaseModel):
@@ -176,16 +205,22 @@ class RAGState(BaseModel):
     planner_plan: Optional[dict] = None
     long_term_insights: List[str] = Field(default_factory=list)
 
-    # Streaming (Phase 4B) — injected by stream_runner, never serialized.
-    # PrivateAttr is used because asyncio.Queue is not pydantic-serializable.
-    _token_queue: Optional["asyncio.Queue[str | None]"] = PrivateAttr(None)
-
     # Output
     final_answer: Optional[str] = None
     citations: List[dict] = Field(default_factory=list)
     is_degraded: bool = False
 
-    # ── Pydantic serialization helpers (Phase 4D) ──────────────────────────
+    # Streaming (Phase 4B) — accessed via property to avoid checkpointer serialization issues
+    @property
+    def _token_queue(self) -> Optional[Any]:
+        return get_token_queue(self.session_id)
+
+    @_token_queue.setter
+    def _token_queue(self, q: Optional[Any]) -> None:
+        if q is None:
+            unregister_token_queue(self.session_id)
+        else:
+            register_token_queue(self.session_id, q)
 
     @field_validator("retrieved_chunks", mode="before")
     @classmethod

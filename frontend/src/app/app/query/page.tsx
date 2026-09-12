@@ -129,6 +129,11 @@ interface UploadQueueItem {
         );
         setRecentUploads((prev) => [file.name, ...prev.filter((n) => n !== file.name)].slice(0, 5));
         toast.success(`Indexed "${file.name}" (${chunkCount} chunks) into pgvector.`);
+
+        // Auto-dismiss the completed notification after 4s to keep UI clean and soothing
+        setTimeout(() => {
+          setUploadQueue((prev) => prev.filter((u) => u.id !== item.id));
+        }, 4000);
       } catch (err) {
         const rawErr = (err as Error).message || "Upload failed";
         // Clean error display
@@ -461,22 +466,33 @@ interface UploadQueueItem {
               )}
             </div>
 
-            {/* Selected Document Tags */}
-            {selectedDocNames.map((name) => (
+            {/* Selected Document Tags (Clean compact display) */}
+            {selectedDocNames.slice(0, 2).map((name) => (
               <span
                 key={name}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] truncate max-w-[140px]"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] truncate max-w-[130px]"
               >
                 <span className="truncate">{name}</span>
                 <button
                   type="button"
                   onClick={() => setSelectedDocNames((prev) => prev.filter((n) => n !== name))}
                   className="text-blue-500 hover:text-blue-700 font-bold ml-0.5"
+                  title="Unscope document"
                 >
                   &times;
                 </button>
               </span>
             ))}
+            {selectedDocNames.length > 2 && (
+              <button
+                type="button"
+                onClick={() => setShowDocSelector(true)}
+                className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 text-[11px] font-semibold transition-colors cursor-pointer"
+                title="View all selected documents"
+              >
+                +{selectedDocNames.length - 2} more
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -493,74 +509,6 @@ interface UploadQueueItem {
 
         {/* Chat Stream Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-          {/* Live Ingestion / Upload Progress Cards */}
-          {uploadQueue.length > 0 && (
-            <div className="space-y-2">
-              {uploadQueue.map((item) => (
-                <div
-                  key={item.id}
-                  className={`flex items-center justify-between gap-3 p-3 rounded-xl border text-xs transition-all ${
-                    item.status === "indexed"
-                      ? "bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200"
-                      : item.status === "error"
-                      ? "bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200"
-                      : "bg-blue-50/70 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/60 text-blue-900 dark:text-blue-200"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        item.status === "indexed"
-                          ? "bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400"
-                          : item.status === "error"
-                          ? "bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400"
-                          : "bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400"
-                      }`}
-                    >
-                      {item.status === "indexed" ? (
-                        <CheckCircle2 size={15} />
-                      ) : item.status === "error" ? (
-                        <AlertTriangle size={15} />
-                      ) : (
-                        <Loader2 size={15} className="animate-spin" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold truncate text-[12px] flex items-center gap-1.5">
-                        <span>{item.name}</span>
-                        <span className="text-[10px] opacity-60 font-mono font-normal">
-                          ({formatFileSize(item.size)})
-                        </span>
-                      </div>
-                      <div className="text-[11px] opacity-75 mt-0.5 truncate">
-                        {item.status === "uploading" && "Uploading document to server..."}
-                        {item.status === "embedding" && "Chunking, calculating embeddings & writing to pgvector..."}
-                        {item.status === "indexed" && (
-                          <span className="text-emerald-700 dark:text-emerald-300 font-medium">
-                            Ready to query • {item.chunks || 1} chunks indexed across vector & sparse stores
-                          </span>
-                        )}
-                        {item.status === "error" && (
-                          <span className="text-rose-700 dark:text-rose-300 font-medium">
-                            {item.error || "Ingestion failed"}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeQueueItem(item.id)}
-                    className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 opacity-60 hover:opacity-100 transition-opacity"
-                    title="Dismiss"
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
           {messages.length === 0 && !loading && (
             <div className="h-full flex flex-col items-center justify-center text-center max-w-xl mx-auto py-12">
               <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 flex items-center justify-center text-blue-600 mb-4 shadow-xs">
@@ -622,122 +570,142 @@ interface UploadQueueItem {
               }`}
             >
               {msg.role === "user" ? (
-                <div className="max-w-2xl px-4 py-2.5 rounded-2xl rounded-tr-xs bg-blue-600 text-white text-xs sm:text-sm font-medium shadow-xs">
+                <div className="max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 bg-blue-600 text-white text-xs sm:text-sm font-medium shadow-xs">
                   {msg.content}
                 </div>
               ) : (
                 <div
                   onClick={() => setSelectedMessageId(msg.id)}
-                  className={`max-w-3xl w-full p-5 rounded-2xl rounded-tl-xs border transition-all cursor-pointer ${
+                  className={`max-w-[95%] sm:max-w-[90%] rounded-2xl p-4 sm:p-5 border transition-all cursor-pointer ${
                     selectedMessageId === msg.id
-                      ? "bg-slate-50/80 dark:bg-slate-800/60 border-blue-300 dark:border-blue-700 shadow-xs"
-                      : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                      ? "bg-white dark:bg-slate-900 border-blue-500/80 shadow-md ring-1 ring-blue-500/30"
+                      : "bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700"
                   }`}
                 >
-                  {/* Status Banner */}
-                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800/80">
+                  {/* Top metadata badge */}
+                  <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800/80 mb-3 text-xs">
                     <div className="flex items-center gap-2">
-                      {msg.isHallucinated || (msg.healingActions && msg.healingActions.length > 0) ? (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-                          <RefreshCw size={11} className="animate-spin-slow" />
-                          <span>Self-Healed Response</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                          <CheckCircle2 size={11} />
-                          <span>Grounded Answer</span>
+                      <div className="w-5 h-5 rounded-md bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-[10px]">
+                        N
+                      </div>
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">
+                        Nexus Core Answer
+                      </span>
+                      {msg.healingActions && msg.healingActions.length > 0 && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                          <RefreshCw size={10} className="animate-spin" />
+                          Self-Healed ({msg.retryCount || 1} retries)
                         </span>
                       )}
-
-                      {msg.groundingScore !== undefined && (
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                          Score: {(msg.groundingScore * 100).toFixed(0)}%
+                      {msg.isHallucinated && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                          <AlertTriangle size={10} />
+                          Low Grounding Score
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                      {msg.latency !== undefined && (
-                        <span className="flex items-center gap-1">
-                          <Clock size={11} />
-                          <span>{msg.latency}ms</span>
+                    <div className="flex items-center gap-2 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                      {msg.groundingScore !== undefined && (
+                        <span
+                          className={`font-semibold ${
+                            msg.groundingScore >= 0.75
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : msg.groundingScore >= 0.5
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-rose-600 dark:text-rose-400"
+                          }`}
+                        >
+                          {(msg.groundingScore * 100).toFixed(0)}% Grounded
                         </span>
                       )}
-                      {msg.retryCount !== undefined && msg.retryCount > 0 && (
-                        <span className="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono">
-                          {msg.retryCount} retry
+                      {msg.latency && (
+                        <span className="flex items-center gap-0.5">
+                          <Clock size={11} />
+                          {msg.latency}ms
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Message Content */}
-                  <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                  {/* Answer Content */}
+                  <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap font-sans selection:bg-blue-100 dark:selection:bg-blue-900">
                     {msg.content}
                   </div>
 
-                  {/* Sources Preview Pill */}
+                  {/* Sources Preview Pills */}
                   {msg.sources && msg.sources.length > 0 && (
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11px] text-slate-400 font-medium mr-1 flex items-center gap-1">
-                        <FileText size={11} /> Sources:
+                    <div className="mt-3.5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mr-1 flex items-center gap-1">
+                        <Layers size={10} />
+                        Sources ({msg.sources.length}):
                       </span>
-                      {msg.sources.slice(0, 3).map((s, idx) => (
+                      {msg.sources.map((src, i) => (
                         <span
-                          key={idx}
-                          className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-mono border border-slate-200 dark:border-slate-700 truncate max-w-[160px]"
-                          title={s.content}
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-mono border border-slate-200 dark:border-slate-700"
                         >
-                          {s.source || s.chunk_id || `Source ${idx + 1}`}
+                          <FileText size={10} className="text-blue-500" />
+                          <span className="truncate max-w-[150px]">
+                            {src.source || `Chunk ${i + 1}`}
+                          </span>
+                          <span className="text-slate-400">({(src.score * 100).toFixed(0)}%)</span>
                         </span>
                       ))}
-                      {msg.sources.length > 3 && (
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          +{msg.sources.length - 3} more
-                        </span>
-                      )}
                     </div>
                   )}
 
-                  {/* Actions Footer */}
-                  <div className="mt-3 flex items-center justify-between pt-2 text-slate-400 text-xs">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCopy(msg.id, msg.content);
-                      }}
-                      className="flex items-center gap-1 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                    >
-                      <Copy size={12} />
-                      <span className="text-[11px]">
-                        {copiedId === msg.id ? "Copied" : "Copy"}
-                      </span>
-                    </button>
+                  {/* Footer actions */}
+                  <div className="mt-3 pt-2 flex items-center justify-between text-xs text-slate-400">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopy(msg.id, msg.content);
+                        }}
+                        className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors flex items-center gap-1 text-[11px]"
+                        title="Copy text"
+                      >
+                        {copiedId === msg.id ? (
+                          <CheckCircle2 size={12} className="text-emerald-500" />
+                        ) : (
+                          <Copy size={12} />
+                        )}
+                        <span>{copiedId === msg.id ? "Copied" : "Copy"}</span>
+                      </button>
+                    </div>
 
                     <div className="flex items-center gap-1">
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleFeedback(msg.id, "up");
                         }}
-                        className={`p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${
-                          feedbackGiven[msg.id] === "up" ? "text-emerald-600 font-bold" : ""
+                        className={`p-1 rounded-md transition-colors ${
+                          feedbackGiven[msg.id] === "up"
+                            ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40"
+                            : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600"
                         }`}
-                        title="Helpful & Accurate"
+                        title="Good answer"
                       >
-                        <ThumbsUp size={13} />
+                        <ThumbsUp size={12} />
                       </button>
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleFeedback(msg.id, "down");
                         }}
-                        className={`p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${
-                          feedbackGiven[msg.id] === "down" ? "text-rose-600 font-bold" : ""
+                        className={`p-1 rounded-md transition-colors ${
+                          feedbackGiven[msg.id] === "down"
+                            ? "text-rose-600 bg-rose-50 dark:bg-rose-950/40"
+                            : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600"
                         }`}
-                        title="Needs correction"
+                        title="Bad answer"
                       >
-                        <ThumbsDown size={13} />
+                        <ThumbsDown size={12} />
                       </button>
                     </div>
                   </div>
@@ -746,12 +714,12 @@ interface UploadQueueItem {
             </div>
           ))}
 
-          {/* Streaming Pending State */}
+          {/* Active Streaming Response Card */}
           {loading && (
-            <div className="max-w-3xl w-full p-5 rounded-2xl rounded-tl-xs border border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-950/20 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400">
-                <Loader2 size={13} className="animate-spin" />
-                <span className="capitalize">
+            <div className="max-w-[95%] sm:max-w-[90%] rounded-2xl p-4 sm:p-5 border border-blue-400/80 bg-blue-50/20 dark:bg-blue-950/20 shadow-sm animate-pulse space-y-3">
+              <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 font-semibold">
+                <Loader2 size={14} className="animate-spin" />
+                <span>
                   {activePhase ? `Pipeline Phase: ${activePhase}...` : "Generating response..."}
                 </span>
               </div>
@@ -763,6 +731,87 @@ interface UploadQueueItem {
 
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Floating Soothing Ingestion Status Banner */}
+        {uploadQueue.length > 0 && (
+          <div className="mx-3 sm:mx-4 mb-2 p-2.5 sm:p-3 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-md transition-all duration-300 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-200">
+                {uploadQueue.some((u) => u.status === "uploading" || u.status === "embedding") ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin text-blue-600 dark:text-blue-400" />
+                    <span>
+                      Indexing {uploadQueue.filter((u) => u.status === "uploading" || u.status === "embedding").length} document{uploadQueue.filter((u) => u.status === "uploading" || u.status === "embedding").length > 1 ? "s" : ""} into knowledge base...
+                    </span>
+                  </>
+                ) : uploadQueue.every((u) => u.status === "indexed") ? (
+                  <>
+                    <CheckCircle2 size={14} className="text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-emerald-700 dark:text-emerald-300">
+                      All {uploadQueue.length} document{uploadQueue.length > 1 ? "s" : ""} indexed successfully
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle size={14} className="text-amber-500" />
+                    <span>Document ingestion status</span>
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setUploadQueue([])}
+                className="text-[11px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Dismiss all notifications"
+              >
+                Dismiss
+              </button>
+            </div>
+
+            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+              {uploadQueue.map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all ${
+                    item.status === "indexed"
+                      ? "bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-200"
+                      : item.status === "error"
+                      ? "bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-200"
+                      : "bg-blue-50/60 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/60 text-blue-800 dark:text-blue-200"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {item.status === "indexed" ? (
+                      <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    ) : item.status === "error" ? (
+                      <AlertTriangle size={13} className="text-rose-600 dark:text-rose-400 shrink-0" />
+                    ) : (
+                      <Loader2 size={13} className="animate-spin text-blue-600 dark:text-blue-400 shrink-0" />
+                    )}
+                    <span className="font-medium truncate">{item.name}</span>
+                    <span className="text-[10px] opacity-60 font-mono font-normal shrink-0">
+                      ({formatFileSize(item.size)})
+                    </span>
+                    <span className="text-[10px] opacity-75 truncate hidden sm:inline ml-1">
+                      {item.status === "uploading" && "• Uploading..."}
+                      {item.status === "embedding" && "• Embedding into pgvector..."}
+                      {item.status === "indexed" && `• ${item.chunks || 1} chunks ready`}
+                      {item.status === "error" && `• ${item.error || "Failed"}`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeQueueItem(item.id)}
+                    className="opacity-50 hover:opacity-100 p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-opacity ml-1"
+                    title="Dismiss notification"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Input Bar */}
         <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2.5">
@@ -781,47 +830,7 @@ interface UploadQueueItem {
             }}
           />
 
-          {/* Attached Files Tray (ChatGPT / Claude Style) */}
-          {uploadQueue.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 max-h-28 overflow-y-auto pr-1">
-              {uploadQueue.map((item) => (
-                <div
-                  key={item.id}
-                  className={`inline-flex items-center gap-2 pl-2.5 pr-2 py-1.5 rounded-lg border text-xs font-medium transition-all ${
-                    item.status === "indexed"
-                      ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200"
-                      : item.status === "error"
-                      ? "bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200"
-                      : "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-200"
-                  }`}
-                >
-                  <div className="shrink-0">
-                    {item.status === "indexed" ? (
-                      <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400" />
-                    ) : item.status === "error" ? (
-                      <AlertTriangle size={13} className="text-rose-600 dark:text-rose-400" />
-                    ) : (
-                      <Loader2 size={13} className="animate-spin text-blue-600 dark:text-blue-400" />
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 truncate max-w-[200px]">
-                    <span className="truncate">{item.name}</span>
-                    <span className="text-[10px] opacity-60 font-mono">
-                      {formatFileSize(item.size)}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeQueueItem(item.id)}
-                    className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-colors ml-0.5"
-                    title="Remove"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+
 
           <form
             onSubmit={(e) => {
