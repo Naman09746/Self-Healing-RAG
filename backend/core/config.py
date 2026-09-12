@@ -306,7 +306,7 @@ class Settings(BaseSettings):
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def assemble_db_url(cls, v: Any) -> str:
+    def assemble_db_url(cls, v: Any) -> Any:
         if isinstance(v, str) and v.strip():
             s = v.strip()
             # Auto-heal Neon typo if user combined -pooler with .c- region (which breaks DNS)
@@ -381,7 +381,7 @@ class Settings(BaseSettings):
         return ["*"]
 
 
-    def with_overrides(self, **kwargs) -> "Settings":
+    def with_overrides(self, **kwargs: Any) -> "Settings":
         """Return a copy of Settings with specified fields overridden without mutating global settings."""
         return self.model_copy(update=kwargs)
 
