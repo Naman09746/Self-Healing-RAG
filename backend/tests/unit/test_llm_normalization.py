@@ -5,17 +5,17 @@ from backend.core.config import settings
 
 def test_groq_model_normalization():
     # Direct groq provider
-    assert _normalize_model_name("llama3.2:1b", provider="groq") == "llama-3.1-8b-instant"
+    assert _normalize_model_name("llama3.2:1b", provider="groq") == "llama-3.3-70b-versatile"
     assert _normalize_model_name("llama3.3:70b", provider="groq") == "llama-3.3-70b-versatile"
-    assert _normalize_model_name("llama-3.1-8b", provider="groq") == "llama-3.1-8b-instant"
-    assert _normalize_model_name("mistral:7b", provider="groq") == "mixtral-8x7b-32768"
+    assert _normalize_model_name("llama-3.1-8b", provider="groq") == "llama-3.3-70b-versatile"
+    assert _normalize_model_name("mistral:7b", provider="groq") == "gemma2-9b-it"
     assert _normalize_model_name("gemma2:9b", provider="groq") == "gemma2-9b-it"
 
     # Groq API key auto-detection
-    assert _normalize_model_name("llama3.2:1b", api_key="gsk_test123") == "llama-3.1-8b-instant"
+    assert _normalize_model_name("llama3.2:1b", api_key="gsk_test123") == "llama-3.3-70b-versatile"
 
     # Groq base_url auto-detection
-    assert _normalize_model_name("llama3.2:1b", base_url="https://api.groq.com/openai/v1") == "llama-3.1-8b-instant"
+    assert _normalize_model_name("llama3.2:1b", base_url="https://api.groq.com/openai/v1") == "llama-3.3-70b-versatile"
 
 
 def test_openai_model_normalization():

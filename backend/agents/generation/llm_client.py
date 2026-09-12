@@ -11,6 +11,25 @@ from backend.core.observability import get_tracer, get_langsmith_client
 logger = get_logger(__name__)
 
 
+def _is_model_error(exc: Exception) -> bool:
+    """Check if an exception is due to an unrecognized, deprecated, or decommissioned model."""
+    err_str = str(exc).lower()
+    return any(
+        term in err_str
+        for term in (
+            "model_decommissioned",
+            "model_not_found",
+            "does not exist",
+            "no longer supported",
+            "deprecated",
+            "not have access",
+            "not_found",
+            "404",
+            "model",
+        )
+    )
+
+
 def _normalize_model_name(model: str, base_url: str = "", api_key: str = "", provider: str = "") -> str:
     """Normalize local Ollama model names to provider-specific names if using OpenAI/Groq/OpenRouter."""
     base = (base_url or "").lower()
@@ -23,31 +42,35 @@ def _normalize_model_name(model: str, base_url: str = "", api_key: str = "", pro
 
     if is_groq:
         groq_mapping = {
-            "llama3.2:1b": "llama-3.1-8b-instant",
-            "llama3.2:3b": "llama-3.1-8b-instant",
-            "llama3.2": "llama-3.1-8b-instant",
-            "llama3.1:8b": "llama-3.1-8b-instant",
-            "llama3.1": "llama-3.1-8b-instant",
-            "llama3:8b": "llama-3.1-8b-instant",
-            "llama3": "llama-3.1-8b-instant",
-            "llama-3.1-8b": "llama-3.1-8b-instant",
+            "llama3.2:1b": "llama-3.3-70b-versatile",
+            "llama3.2:3b": "llama-3.3-70b-versatile",
+            "llama3.2": "llama-3.3-70b-versatile",
+            "llama3.1:8b": "llama-3.3-70b-versatile",
+            "llama3.1": "llama-3.3-70b-versatile",
+            "llama3:8b": "llama-3.3-70b-versatile",
+            "llama3": "llama-3.3-70b-versatile",
+            "llama-3.1-8b": "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant": "llama-3.3-70b-versatile",
             "llama3:70b": "llama-3.3-70b-versatile",
             "llama3.3:70b": "llama-3.3-70b-versatile",
             "llama3.3": "llama-3.3-70b-versatile",
             "llama-3.3-70b": "llama-3.3-70b-versatile",
-            "mistral": "mixtral-8x7b-32768",
-            "mistral:7b": "mixtral-8x7b-32768",
+            "llama3-8b-8192": "llama-3.3-70b-versatile",
+            "llama3-70b-8192": "llama-3.3-70b-versatile",
+            "mistral": "gemma2-9b-it",
+            "mistral:7b": "gemma2-9b-it",
+            "mixtral-8x7b-32768": "gemma2-9b-it",
             "gemma2": "gemma2-9b-it",
             "gemma2:9b": "gemma2-9b-it",
         }
         if not model:
-            return "llama-3.1-8b-instant"
+            return "llama-3.3-70b-versatile"
         if model in groq_mapping:
             return groq_mapping[model]
         if ":" in model:
             clean = model.replace(":", "-")
-            return groq_mapping.get(clean, "llama-3.1-8b-instant")
-        return model
+            return groq_mapping.get(clean, "llama-3.3-70b-versatile")
+        return model or "llama-3.3-70b-versatile"
 
     elif is_openai:
         # If calling OpenAI direct, normalize Ollama tags or llama tags to gpt-4o-mini / gpt-4o
@@ -114,16 +137,14 @@ class LLMClient:
             self._async_client = ollama.AsyncClient(host=self.host)
 
     async def _execute_openai_chat(self, kwargs: dict) -> str:
-        """Execute chat completion with automatic model fallback on 404 model_not_found."""
+        """Execute chat completion with automatic model fallback on any model error."""
         models_to_try = [kwargs["model"]]
         candidates = [
             "llama-3.3-70b-versatile",
+            "gemma2-9b-it",
             "llama-3.1-8b-instant",
-            "llama3-8b-8192",
-            "llama-3.1-70b-versatile",
             "gpt-4o-mini",
             "gpt-4o",
-            "mixtral-8x7b-32768",
         ]
         for c in candidates:
             if c not in models_to_try:
@@ -143,9 +164,8 @@ class LLMClient:
                     self.model = m
                 return response.choices[0].message.content or ""
             except Exception as e:
-                err_str = str(e).lower()
-                if "model_not_found" in err_str or "does not exist" in err_str or "404" in err_str or "not found" in err_str:
-                    logger.warning("Model not found on provider, attempting fallback candidate", model=m, error=str(e))
+                if _is_model_error(e):
+                    logger.warning("Model error on provider, attempting fallback candidate", model=m, error=str(e))
                     last_exc = e
                     continue
                 raise
@@ -154,16 +174,14 @@ class LLMClient:
         raise RuntimeError("No model candidates succeeded")
 
     async def _execute_openai_stream(self, kwargs: dict) -> AsyncGenerator[str, None]:
-        """Execute chat stream with automatic model fallback on 404 model_not_found."""
+        """Execute chat stream with automatic model fallback on any model error."""
         models_to_try = [kwargs["model"]]
         candidates = [
             "llama-3.3-70b-versatile",
+            "gemma2-9b-it",
             "llama-3.1-8b-instant",
-            "llama3-8b-8192",
-            "llama-3.1-70b-versatile",
             "gpt-4o-mini",
             "gpt-4o",
-            "mixtral-8x7b-32768",
         ]
         for c in candidates:
             if c not in models_to_try:
@@ -181,9 +199,8 @@ class LLMClient:
                     self.model = m
                 break
             except Exception as e:
-                err_str = str(e).lower()
-                if "model_not_found" in err_str or "does not exist" in err_str or "404" in err_str or "not found" in err_str:
-                    logger.warning("Model not found for stream, trying fallback candidate", model=m, error=str(e))
+                if _is_model_error(e):
+                    logger.warning("Model error for stream, trying fallback candidate", model=m, error=str(e))
                     last_exc = e
                     continue
                 raise
