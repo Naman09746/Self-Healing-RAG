@@ -113,6 +113,90 @@ class LLMClient:
             self.model = raw_model
             self._async_client = ollama.AsyncClient(host=self.host)
 
+    async def _execute_openai_chat(self, kwargs: dict) -> str:
+        """Execute chat completion with automatic model fallback on 404 model_not_found."""
+        models_to_try = [kwargs["model"]]
+        candidates = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "llama3-8b-8192",
+            "llama-3.1-70b-versatile",
+            "gpt-4o-mini",
+            "gpt-4o",
+            "mixtral-8x7b-32768",
+        ]
+        for c in candidates:
+            if c not in models_to_try:
+                models_to_try.append(c)
+
+        last_exc = None
+        for m in models_to_try:
+            try:
+                attempt_kwargs = dict(kwargs)
+                attempt_kwargs["model"] = m
+                response = await asyncio.wait_for(
+                    self._openai_client.chat.completions.create(**attempt_kwargs),
+                    timeout=self._timeout,
+                )
+                if m != self.model:
+                    logger.info("Successfully recovered with fallback model", previous=self.model, fallback=m)
+                    self.model = m
+                return response.choices[0].message.content or ""
+            except Exception as e:
+                err_str = str(e).lower()
+                if "model_not_found" in err_str or "does not exist" in err_str or "404" in err_str or "not found" in err_str:
+                    logger.warning("Model not found on provider, attempting fallback candidate", model=m, error=str(e))
+                    last_exc = e
+                    continue
+                raise
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("No model candidates succeeded")
+
+    async def _execute_openai_stream(self, kwargs: dict) -> AsyncGenerator[str, None]:
+        """Execute chat stream with automatic model fallback on 404 model_not_found."""
+        models_to_try = [kwargs["model"]]
+        candidates = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "llama3-8b-8192",
+            "llama-3.1-70b-versatile",
+            "gpt-4o-mini",
+            "gpt-4o",
+            "mixtral-8x7b-32768",
+        ]
+        for c in candidates:
+            if c not in models_to_try:
+                models_to_try.append(c)
+
+        last_exc = None
+        stream_resp = None
+        for m in models_to_try:
+            try:
+                attempt_kwargs = dict(kwargs)
+                attempt_kwargs["model"] = m
+                stream_resp = await self._openai_client.chat.completions.create(**attempt_kwargs)
+                if m != self.model:
+                    logger.info("Successfully started stream with fallback model", previous=self.model, fallback=m)
+                    self.model = m
+                break
+            except Exception as e:
+                err_str = str(e).lower()
+                if "model_not_found" in err_str or "does not exist" in err_str or "404" in err_str or "not found" in err_str:
+                    logger.warning("Model not found for stream, trying fallback candidate", model=m, error=str(e))
+                    last_exc = e
+                    continue
+                raise
+
+        if stream_resp is None:
+            if last_exc:
+                raise last_exc
+            raise RuntimeError("No model candidates succeeded for streaming")
+
+        async for chunk in stream_resp:
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
     @retry(
         stop=stop_after_attempt(2),
         wait=wait_exponential(multiplier=1, min=1, max=5),
@@ -152,11 +236,7 @@ class LLMClient:
                     }
                     if format == "json":
                         kwargs["response_format"] = {"type": "json_object"}
-                    response = await asyncio.wait_for(
-                        self._openai_client.chat.completions.create(**kwargs),
-                        timeout=self._timeout,
-                    )
-                    result = response.choices[0].message.content or ""
+                    result = await self._execute_openai_chat(kwargs)
                 else:
                     kwargs: dict = {
                         "model": self.model,
@@ -229,10 +309,8 @@ class LLMClient:
                 }
                 if format == "json":
                     kwargs["response_format"] = {"type": "json_object"}
-                stream_resp = await self._openai_client.chat.completions.create(**kwargs)
-                async for chunk in stream_resp:
-                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
+                async for token in self._execute_openai_stream(kwargs):
+                    yield token
             else:
                 kwargs: dict = {
                     "model": self.model,
