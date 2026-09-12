@@ -249,15 +249,15 @@ async function request<T>(
 
 export const auth = {
   login: (email: string, password: string) =>
-    request<AuthResponse>("POST", "/auth/login", { email, password }, { skipAuth: true, timeout: 15000 }),
+    request<AuthResponse>("POST", "/auth/login", { email, password }, { skipAuth: true, timeout: 60000 }),
 
   signup: (email: string, password: string, name?: string) =>
-    request<AuthResponse>("POST", "/auth/signup", { email, password, name }, { skipAuth: true, timeout: 15000 }),
+    request<AuthResponse>("POST", "/auth/signup", { email, password, name }, { skipAuth: true, timeout: 60000 }),
 
   refresh: (refreshToken: string) =>
-    request<AuthResponse>("POST", "/auth/refresh", { refresh_token: refreshToken }, { skipAuth: true, timeout: 15000 }),
+    request<AuthResponse>("POST", "/auth/refresh", { refresh_token: refreshToken }, { skipAuth: true, timeout: 60000 }),
 
-  profile: () => request<UserProfile>("GET", "/auth/me", undefined, { timeout: 10000 }),
+  profile: () => request<UserProfile>("GET", "/auth/me", undefined, { timeout: 30000 }),
 };
 
 // ─── Query API ─────────────────────────────────────────────
