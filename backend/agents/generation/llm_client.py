@@ -81,7 +81,7 @@ def _normalize_model_name(model: str, base_url: str = "", api_key: str = "", pro
 
     elif is_openrouter:
         if not model or ":" in model:
-            return "meta-llama/llama-3.1-8b-instruct:free"
+            return "openrouter/free"
         return model
 
     return model or "llama3.2:1b"
@@ -142,7 +142,13 @@ class LLMClient:
         if self.provider == "openai":
             candidates = ["gpt-4o-mini", "gpt-4o"]
         elif self.provider == "openrouter":
-            candidates = ["meta-llama/llama-3.1-8b-instruct:free", "google/gemma-2-9b-it:free"]
+            candidates = [
+                "openrouter/free",
+                "google/gemma-4-31b-it:free",
+                "google/gemma-4-26b-a4b-it:free",
+                "nvidia/nemotron-3.5-lightning:free",
+                "liquid/lfm-2.5-2.6b:free",
+            ]
         else:
             candidates = ["llama-3.3-70b-versatile", "gemma2-9b-it", "llama-3.1-8b-instant"]
 
@@ -180,7 +186,13 @@ class LLMClient:
         if self.provider == "openai":
             candidates = ["gpt-4o-mini", "gpt-4o"]
         elif self.provider == "openrouter":
-            candidates = ["meta-llama/llama-3.1-8b-instruct:free", "google/gemma-2-9b-it:free"]
+            candidates = [
+                "openrouter/free",
+                "google/gemma-4-31b-it:free",
+                "google/gemma-4-26b-a4b-it:free",
+                "nvidia/nemotron-3.5-lightning:free",
+                "liquid/lfm-2.5-2.6b:free",
+            ]
         else:
             candidates = ["llama-3.3-70b-versatile", "gemma2-9b-it", "llama-3.1-8b-instant"]
 

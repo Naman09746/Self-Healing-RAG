@@ -27,8 +27,8 @@ def test_openai_model_normalization():
 
 
 def test_openrouter_model_normalization():
-    assert _normalize_model_name("llama3.2:1b", provider="openrouter") == "meta-llama/llama-3.1-8b-instruct:free"
-    assert _normalize_model_name("llama3.2:1b", api_key="sk-or-test123") == "meta-llama/llama-3.1-8b-instruct:free"
+    assert _normalize_model_name("llama3.2:1b", provider="openrouter") == "openrouter/free"
+    assert _normalize_model_name("llama3.2:1b", api_key="sk-or-test123") == "openrouter/free"
 
 
 def test_ollama_local_preservation():
