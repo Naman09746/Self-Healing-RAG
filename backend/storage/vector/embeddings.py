@@ -47,7 +47,7 @@ def _openai_embed(texts: list[str], model: str, api_key: str, base_url: str | No
         from openai import OpenAI
     except Exception as e:
         raise EmbeddingError(f"openai package required for OPENAI embeddings: {e}") from e
-    kwargs: dict = {}
+    kwargs: dict[str, str] = {}
     if base_url:
         kwargs["base_url"] = base_url
     client = OpenAI(api_key=api_key, **kwargs)
@@ -87,7 +87,7 @@ class EmbeddingProvider:
         model: str | None = None,
         dim: int | None = None,
         use_hash_fallback: bool | None = None,
-    ):
+    ) -> None:
         self.model = model or getattr(settings, "EMBEDDING_MODEL", "nomic-embed-text")
         self.dim = dim or getattr(settings, "VECTOR_STORE_DIM", 768)
         # Respect global flag if not explicitly overridden (tests can pass True)

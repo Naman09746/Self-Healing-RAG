@@ -1,7 +1,7 @@
 import ollama
 import asyncio
 import time
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from opentelemetry import trace
 from backend.core.config import settings
@@ -98,12 +98,12 @@ class LLMClient:
     Supports Ollama (default) as well as OpenAI-compatible providers (Groq, OpenRouter, OpenAI, vLLM).
     """
 
-    def __init__(self, model: str = None, host: str = None):
+    def __init__(self, model: str | None = None, host: str | None = None) -> None:
         self.host = host or settings.OLLAMA_HOST
         self._timeout = getattr(settings, "LLM_TIMEOUT", 30)  # Configured timeout in seconds
         self.provider = getattr(settings, "LLM_PROVIDER", "ollama").lower()
-        self._openai_client = None
-        self._async_client = None
+        self._openai_client: Any | None = None
+        self._async_client: Any | None = None
 
         raw_model = model or settings.MODEL_NAME
         api_key = getattr(settings, "OPENAI_API_KEY", "") or ""
@@ -119,7 +119,7 @@ class LLMClient:
         if self.provider in ("openai", "groq", "groqcloud", "openrouter") or bool(api_key):
             try:
                 from openai import AsyncOpenAI
-                default_headers = {}
+                default_headers: dict[str, str] = {}
                 if self.provider in ("openrouter", "openrouter_ai") or "openrouter.ai" in (base_url or ""):
                     default_headers = {
                         "HTTP-Referer": "https://self-healing-rag.onrender.com",
@@ -150,8 +150,10 @@ class LLMClient:
             self.model = raw_model
             self._async_client = ollama.AsyncClient(host=self.host)
 
-    async def _execute_openai_chat(self, kwargs: dict) -> str:
+    async def _execute_openai_chat(self, kwargs: dict[str, Any]) -> str:
         """Execute chat completion with automatic model fallback on any model error."""
+        if self._openai_client is None:
+            raise RuntimeError("OpenAI client not initialized")
         models_to_try = [kwargs["model"]]
         
         if self.provider == "openai":
@@ -195,8 +197,10 @@ class LLMClient:
             raise last_exc
         raise RuntimeError("No model candidates succeeded")
 
-    async def _execute_openai_stream(self, kwargs: dict) -> AsyncGenerator[str, None]:
+    async def _execute_openai_stream(self, kwargs: dict[str, Any]) -> AsyncGenerator[str, None]:
         """Execute chat stream with automatic model fallback on any model error."""
+        if self._openai_client is None:
+            raise RuntimeError("OpenAI client not initialized")
         models_to_try = [kwargs["model"]]
         
         if self.provider == "openai":
@@ -250,7 +254,7 @@ class LLMClient:
         retry=retry_if_exception_type(Exception),
         reraise=True,
     )
-    async def generate(self, prompt: str, format: str = None, max_tokens: int = None) -> str:
+    async def generate(self, prompt: str, format: str | None = None, max_tokens: int | None = None) -> str:
         """Generate with retry logic, hard timeout, and OTel + LangSmith tracing."""
         tracer = get_tracer()
         logger.info("LLM Request", model=self.model)
@@ -275,7 +279,7 @@ class LLMClient:
 
             try:
                 if self._openai_client is not None:
-                    kwargs: dict = {
+                    kwargs: dict[str, Any] = {
                         "model": self.model,
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.1,
@@ -285,7 +289,9 @@ class LLMClient:
                         kwargs["response_format"] = {"type": "json_object"}
                     result = await self._execute_openai_chat(kwargs)
                 else:
-                    kwargs: dict = {
+                    if self._async_client is None:
+                        raise RuntimeError("Ollama client not initialized")
+                    kwargs: dict[str, Any] = {
                         "model": self.model,
                         "prompt": prompt,
                         "keep_alive": "10m",
@@ -333,7 +339,7 @@ class LLMClient:
                 raise
 
     async def generate_stream(
-        self, prompt: str, format: str = None, max_tokens: int = None
+        self, prompt: str, format: str | None = None, max_tokens: int | None = None
     ) -> AsyncGenerator[str, None]:
         """Stream tokens from the LLM via Ollama or OpenAI-compatible async streaming API.
 
@@ -347,7 +353,7 @@ class LLMClient:
         token_limit = max_tokens or (512 if format == "json" else 1536)
         try:
             if self._openai_client is not None:
-                kwargs: dict = {
+                kwargs: dict[str, Any] = {
                     "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.1,
@@ -359,7 +365,9 @@ class LLMClient:
                 async for token in self._execute_openai_stream(kwargs):
                     yield token
             else:
-                kwargs: dict = {
+                if self._async_client is None:
+                    raise RuntimeError("Ollama client not initialized")
+                kwargs: dict[str, Any] = {
                     "model": self.model,
                     "prompt": prompt,
                     "keep_alive": "10m",
@@ -383,7 +391,7 @@ class LLMClient:
             logger.error("LLM stream failed", error=str(e))
             raise
 
-    def generate_sync(self, prompt: str, format: str = None) -> str:
+    def generate_sync(self, prompt: str, format: str | None = None) -> str:
         """Synchronous fallback — wraps async in a new event loop.
         Use only when calling from a non-async context (tests, CLI)."""
         return asyncio.run(self.generate(prompt, format))
