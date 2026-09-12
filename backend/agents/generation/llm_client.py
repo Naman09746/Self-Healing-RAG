@@ -25,6 +25,11 @@ def _is_model_error(exc: Exception) -> bool:
             "not have access",
             "not_found",
             "404",
+            "403",
+            "only available on",
+            "gated",
+            "failed_routing_step",
+            "no endpoints",
         )
     ) and "rate limit" not in err_str and "overloaded" not in err_str
 
@@ -81,7 +86,7 @@ def _normalize_model_name(model: str, base_url: str = "", api_key: str = "", pro
 
     elif is_openrouter:
         if not model or ":" in model:
-            return "thinkingmachines/inkling:free"
+            return "nvidia/nemotron-3.5-lightning:free"
         return model
 
     return model or "llama3.2:1b"
@@ -114,7 +119,17 @@ class LLMClient:
         if self.provider in ("openai", "groq", "groqcloud", "openrouter") or bool(api_key):
             try:
                 from openai import AsyncOpenAI
-                self._openai_client = AsyncOpenAI(api_key=api_key or "sk-dummy", base_url=base_url or None)
+                default_headers = {}
+                if is_openrouter or self.provider in ("openrouter", "openrouter_ai") or "openrouter.ai" in (base_url or ""):
+                    default_headers = {
+                        "HTTP-Referer": "https://self-healing-rag.onrender.com",
+                        "X-Title": "Self-Healing RAG",
+                    }
+                self._openai_client = AsyncOpenAI(
+                    api_key=api_key or "sk-dummy",
+                    base_url=base_url or None,
+                    default_headers=default_headers if default_headers else None,
+                )
                 self.model = _normalize_model_name(
                     raw_model,
                     base_url=base_url or "",
@@ -143,12 +158,11 @@ class LLMClient:
             candidates = ["gpt-4o-mini", "gpt-4o"]
         elif self.provider == "openrouter":
             candidates = [
-                "thinkingmachines/inkling:free",
-                "thinkingmachines/inkling-small:free",
                 "nvidia/nemotron-3.5-lightning:free",
+                "inclusionai/ling-3.0-flash-vl:free",
                 "nex-agi/nex-n2.5-pro:free",
                 "nex-agi/nex-n2.5-mini:free",
-                "inclusionai/ling-3.0-flash-vl:free",
+                "liquid/lfm-2.5-2.6b:free",
                 "openrouter/free",
             ]
         else:
@@ -189,12 +203,11 @@ class LLMClient:
             candidates = ["gpt-4o-mini", "gpt-4o"]
         elif self.provider == "openrouter":
             candidates = [
-                "thinkingmachines/inkling:free",
-                "thinkingmachines/inkling-small:free",
                 "nvidia/nemotron-3.5-lightning:free",
+                "inclusionai/ling-3.0-flash-vl:free",
                 "nex-agi/nex-n2.5-pro:free",
                 "nex-agi/nex-n2.5-mini:free",
-                "inclusionai/ling-3.0-flash-vl:free",
+                "liquid/lfm-2.5-2.6b:free",
                 "openrouter/free",
             ]
         else:
