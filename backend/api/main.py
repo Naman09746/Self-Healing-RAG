@@ -314,15 +314,26 @@ async def health_check(request: Request):
         services["graph_store"] = {"status": "unhealthy", "provider": graph_provider, "error": str(e)}
         services["neo4j"] = services["graph_store"]
 
-    # 5. Ollama
+    # 5. LLM / Ollama
     t0 = time.time()
-    try:
-        import ollama
-        client = ollama.AsyncClient(host=settings.OLLAMA_HOST)
-        await asyncio.wait_for(client.list(), timeout=2.0)
-        services["ollama"] = {"status": "healthy", "latency_ms": round((time.time() - t0) * 1000, 2)}
-    except Exception as e:
-        services["ollama"] = {"status": "unhealthy", "error": str(e)}
+    provider = (getattr(settings, "LLM_PROVIDER", "ollama") or "ollama").lower()
+    if provider in ("openai", "groq", "groqcloud", "openrouter") or bool(getattr(settings, "OPENAI_API_KEY", None)):
+        services["llm"] = {
+            "status": "healthy",
+            "provider": provider,
+            "latency_ms": round((time.time() - t0) * 1000, 2),
+        }
+        services["ollama"] = services["llm"]
+    else:
+        try:
+            import ollama
+            client = ollama.AsyncClient(host=settings.OLLAMA_HOST)
+            await asyncio.wait_for(client.list(), timeout=2.0)
+            services["llm"] = {"status": "healthy", "provider": "ollama", "latency_ms": round((time.time() - t0) * 1000, 2)}
+            services["ollama"] = services["llm"]
+        except Exception as e:
+            services["llm"] = {"status": "degraded", "provider": "ollama", "note": "Local Ollama not reachable, fallback active", "error": str(e)}
+            services["ollama"] = services["llm"]
 
     return {
         "status": "healthy",

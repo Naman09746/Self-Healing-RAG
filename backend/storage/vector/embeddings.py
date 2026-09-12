@@ -51,7 +51,10 @@ def _openai_embed(texts: list[str], model: str, api_key: str, base_url: str | No
     if base_url:
         kwargs["base_url"] = base_url
     client = OpenAI(api_key=api_key, **kwargs)
-    resp = client.embeddings.create(model=model, input=texts)
+    embed_model = model or "text-embedding-3-small"
+    if any(tag in embed_model.lower() for tag in ("nomic", "ollama", "llama", "bge", "all-minilm")):
+        embed_model = "text-embedding-3-small"
+    resp = client.embeddings.create(model=embed_model, input=texts)
     return [list(d.embedding) for d in resp.data]
 
 
