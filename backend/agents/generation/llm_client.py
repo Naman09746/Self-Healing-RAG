@@ -81,7 +81,7 @@ def _normalize_model_name(model: str, base_url: str = "", api_key: str = "", pro
 
     elif is_openrouter:
         if not model or ":" in model:
-            return "openrouter/free"
+            return "thinkingmachines/inkling:free"
         return model
 
     return model or "llama3.2:1b"
@@ -143,11 +143,13 @@ class LLMClient:
             candidates = ["gpt-4o-mini", "gpt-4o"]
         elif self.provider == "openrouter":
             candidates = [
-                "openrouter/free",
-                "google/gemma-4-31b-it:free",
-                "google/gemma-4-26b-a4b-it:free",
+                "thinkingmachines/inkling:free",
+                "thinkingmachines/inkling-small:free",
                 "nvidia/nemotron-3.5-lightning:free",
-                "liquid/lfm-2.5-2.6b:free",
+                "nex-agi/nex-n2.5-pro:free",
+                "nex-agi/nex-n2.5-mini:free",
+                "inclusionai/ling-3.0-flash-vl:free",
+                "openrouter/free",
             ]
         else:
             candidates = ["llama-3.3-70b-versatile", "gemma2-9b-it", "llama-3.1-8b-instant"]
@@ -187,11 +189,13 @@ class LLMClient:
             candidates = ["gpt-4o-mini", "gpt-4o"]
         elif self.provider == "openrouter":
             candidates = [
-                "openrouter/free",
-                "google/gemma-4-31b-it:free",
-                "google/gemma-4-26b-a4b-it:free",
+                "thinkingmachines/inkling:free",
+                "thinkingmachines/inkling-small:free",
                 "nvidia/nemotron-3.5-lightning:free",
-                "liquid/lfm-2.5-2.6b:free",
+                "nex-agi/nex-n2.5-pro:free",
+                "nex-agi/nex-n2.5-mini:free",
+                "inclusionai/ling-3.0-flash-vl:free",
+                "openrouter/free",
             ]
         else:
             candidates = ["llama-3.3-70b-versatile", "gemma2-9b-it", "llama-3.1-8b-instant"]
