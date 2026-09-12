@@ -11,6 +11,41 @@ from backend.core.observability import get_tracer, get_langsmith_client
 logger = get_logger(__name__)
 
 
+def _normalize_model_name(model: str, base_url: str = "", api_key: str = "") -> str:
+    """Normalize local Ollama model names to provider-specific names if using OpenAI/Groq."""
+    if not model:
+        return "llama-3.1-8b-instant"
+    base = (base_url or "").lower()
+    is_groq = "groq.com" in base or (api_key or "").startswith("gsk_")
+
+    if is_groq:
+        groq_mapping = {
+            "llama3.2:1b": "llama-3.1-8b-instant",
+            "llama3.2:3b": "llama-3.1-8b-instant",
+            "llama3.2": "llama-3.1-8b-instant",
+            "llama3.1:8b": "llama-3.1-8b-instant",
+            "llama3.1": "llama-3.1-8b-instant",
+            "llama3:8b": "llama-3.1-8b-instant",
+            "llama3": "llama-3.1-8b-instant",
+            "llama3:70b": "llama-3.3-70b-versatile",
+            "llama3.3:70b": "llama-3.3-70b-versatile",
+            "llama3.3": "llama-3.3-70b-versatile",
+            "mistral": "mixtral-8x7b-32768",
+            "mistral:7b": "mixtral-8x7b-32768",
+            "gemma2": "gemma2-9b-it",
+            "gemma2:9b": "gemma2-9b-it",
+        }
+        if model in groq_mapping:
+            return groq_mapping[model]
+        if ":" in model:
+            clean = model.replace(":", "-")
+            return groq_mapping.get(clean, "llama-3.1-8b-instant")
+    elif "openai.com" in base or (api_key or "").startswith("sk-proj-") or (api_key or "").startswith("sk-"):
+        if any(tag in model.lower() for tag in ("llama", "nomic", "mistral", "gemma")):
+            return "gpt-4o-mini"
+    return model
+
+
 class LLMClient:
     """Production-grade async LLM client with retries, hard timeout, and OTel + LangSmith tracing.
     
@@ -18,12 +53,14 @@ class LLMClient:
     """
 
     def __init__(self, model: str = None, host: str = None):
-        self.model = model or settings.MODEL_NAME
         self.host = host or settings.OLLAMA_HOST
         self._timeout = getattr(settings, "LLM_TIMEOUT", 30)  # Configured timeout in seconds
         self.provider = getattr(settings, "LLM_PROVIDER", "ollama").lower()
         self._openai_client = None
         self._async_client = None
+
+        raw_model = model or settings.MODEL_NAME
+        self.model = raw_model
 
         if self.provider in ("openai", "groq", "openrouter") or bool(getattr(settings, "OPENAI_API_KEY", None)):
             try:
@@ -31,6 +68,7 @@ class LLMClient:
                 api_key = getattr(settings, "OPENAI_API_KEY", "") or "sk-dummy"
                 base_url = getattr(settings, "OPENAI_BASE_URL", "") or None
                 self._openai_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+                self.model = _normalize_model_name(raw_model, base_url=base_url or "", api_key=api_key)
             except Exception as e:
                 logger.warning("Could not initialize AsyncOpenAI, falling back to Ollama", error=str(e))
                 self._async_client = ollama.AsyncClient(host=self.host)
