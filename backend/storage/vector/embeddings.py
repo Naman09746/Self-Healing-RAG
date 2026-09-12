@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from typing import Any
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
@@ -47,7 +48,7 @@ def _openai_embed(texts: list[str], model: str, api_key: str, base_url: str | No
         from openai import OpenAI
     except Exception as e:
         raise EmbeddingError(f"openai package required for OPENAI embeddings: {e}") from e
-    kwargs: dict[str, str] = {}
+    kwargs: dict[str, Any] = {}
     if base_url:
         kwargs["base_url"] = base_url
     client = OpenAI(api_key=api_key, **kwargs)
