@@ -88,16 +88,16 @@ spec:
                 name: self-healing-rag-config
             - secretRef:
                 name: self-healing-rag-secrets
-          # Explicit env overrides for service discovery
+          # Explicit env overrides for service discovery (free-tier: pg/memory/none, so no Chroma/Redis/Neo4j by default)
           env:
             - name: OLLAMA_HOST
               value: "http://ollama-service:11434"
-            - name: CHROMA_HOST
-              value: "chroma-service"
-            - name: REDIS_HOST
-              value: "redis-service"
-            - name: NEO4J_URI
-              value: "bolt://neo4j-service:7687"
+            # CHROMA_HOST/REDIS_HOST/NEO4J_URI intentionally omitted for pgvector free-tier;
+            # they are injected only when VECTOR_STORE_PROVIDER/SESSION_STORE_PROVIDER/GRAPH_PROVIDER request them
+            - name: VECTOR_STORE_DIM
+              value: "1536"
+            - name: EMBEDDING_MODEL
+              value: "openai/text-embedding-3-small"
           # Resource limits & requests
           resources:
             limits:
@@ -106,27 +106,27 @@ spec:
             requests:
               cpu: "500m"
               memory: "1Gi"
-          # Readiness probe — signals when pod is ready to serve traffic
+          # Readiness probe — deep check (/ready) for prod parity (live: /health is instant liveness)
           readinessProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: http-api
-            initialDelaySeconds: 10
-            periodSeconds: 15
+            initialDelaySeconds: 15
+            periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
             successThreshold: 1
-          # Liveness probe — restarts pod if unresponsive
+          # Liveness probe — ultra-fast, no DB (for Render/Railway keep-alive)
           livenessProbe:
             httpGet:
               path: /health
               port: http-api
-            initialDelaySeconds: 30
+            initialDelaySeconds: 10
             periodSeconds: 30
-            timeoutSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 3
             successThreshold: 1
-          # Startup probe — gives slow-to-start pods extra time
+          # Startup probe — gives slow-to-start pods extra time (Neon cold start)
           startupProbe:
             httpGet:
               path: /health

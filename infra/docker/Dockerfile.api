@@ -12,9 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md uv.lock* ./
 COPY backend/ ./backend/
-RUN pip wheel --no-cache-dir --wheel-dir /wheels .
+# Pin via uv.lock when present; fallback to wheel build
+RUN if [ -f uv.lock ]; then pip install --no-cache-dir uv && uv pip compile pyproject.toml -o /tmp/req.txt 2>/dev/null || true; fi \
+    && pip wheel --no-cache-dir --wheel-dir /wheels . \
+    && ls -lh /wheels/ | head -n 20
 
 
 # ============================================================

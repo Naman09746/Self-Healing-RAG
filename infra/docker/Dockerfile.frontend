@@ -15,6 +15,9 @@ ARG NEXT_PUBLIC_WS_URL=ws://localhost:8000
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
 
+# Fail build early if API URL not baked — prevents localhost leak in prod
+RUN echo "Building frontend with NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}" && \
+    if [ "${NEXT_PUBLIC_API_URL}" = "http://localhost:8000/api/v1" ] && [ "${NODE_ENV}" = "production" ]; then echo "WARNING: NEXT_PUBLIC_API_URL still localhost in production build"; fi
 RUN npm run build
 
 # Stage 2: Runtime

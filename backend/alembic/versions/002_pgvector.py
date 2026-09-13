@@ -14,7 +14,16 @@ down_revision: Union[str, None] = "001"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-VECTOR_DIM = 768
+import os
+
+# Production uses 1536 (text-embedding-3-small via OpenRouter); legacy 768 for nomic.
+# Read from env at migration time so fresh installs match settings.VECTOR_STORE_DIM.
+try:
+    VECTOR_DIM = int(os.getenv("VECTOR_STORE_DIM", "1536"))
+    if VECTOR_DIM not in (768, 1536, 3072):
+        VECTOR_DIM = 1536
+except Exception:
+    VECTOR_DIM = 1536
 
 
 def upgrade() -> None:

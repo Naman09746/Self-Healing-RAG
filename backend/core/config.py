@@ -407,4 +407,28 @@ class Settings(BaseSettings):
         """Return a copy of Settings with specified fields overridden without mutating global settings."""
         return self.model_copy(update=kwargs)
 
+    def validate_deployment(self) -> list[str]:
+        """Return list of blocking issues for production deployment (empty = ready)."""
+        issues: list[str] = []
+        # Vector dim vs embedding model parity — prevents 0-result fast-fail
+        emb = (self.EMBEDDING_MODEL or "").lower()
+        dim = self.VECTOR_STORE_DIM
+        if "text-embedding-3-small" in emb and dim != 1536:
+            issues.append(f"VECTOR_STORE_DIM={dim} but EMBEDDING_MODEL={self.EMBEDDING_MODEL} requires 1536 — set VECTOR_STORE_DIM=1536 or run migration 006")
+        if "text-embedding-3-large" in emb and dim != 3072:
+            issues.append(f"VECTOR_STORE_DIM={dim} but EMBEDDING_MODEL={self.EMBEDDING_MODEL} requires 3072")
+        if "nomic-embed-text" in emb and dim not in (768,):
+            issues.append(f"VECTOR_STORE_DIM={dim} mismatches nomic-embed-text (768)")
+        # Prod secrets
+        env = (self.ENV or "development").lower()
+        if env == "production" and not self.JWT_PRIVATE_KEY:
+            issues.append("ENV=production requires JWT_PRIVATE_KEY (base64 PEM) — generate with `python -c \"from backend.core.security import generate_rsa_keypair; print(generate_rsa_keypair())\"`")
+        if self.EMBEDDING_FALLBACK_ENABLED and env == "production":
+            issues.append("EMBEDDING_FALLBACK_ENABLED must be false in production (hash fallback poisons index)")
+        # GRAPH_PROVIDER typo guard
+        if getattr(self, "GRAPH_STORE_PROVIDER", None):
+            issues.append("GRAPH_STORE_PROVIDER is deprecated typo — use GRAPH_PROVIDER")
+        return issues
+
+
 settings = Settings()

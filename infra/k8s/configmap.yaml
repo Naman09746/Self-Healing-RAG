@@ -13,13 +13,14 @@ data:
   # Logging
   LOG_LEVEL: "INFO"
   LOG_FORMAT: "json"
-  # Model
-  MODEL_NAME: "mistral:7b"
-  EMBEDDING_MODEL: "nomic-embed-text"
-  # Vector Store (pluggable — free-tier default pgvector)
+  # Model — must match Render/Neon prod (OpenRouter)
+  MODEL_NAME: "nvidia/nemotron-3.5-lightning:free"
+  EMBEDDING_MODEL: "openai/text-embedding-3-small"
+  # Vector Store (pluggable — free-tier default pgvector, 1536 for OpenRouter)
   VECTOR_STORE_PROVIDER: "pgvector"
-  VECTOR_STORE_DIM: "768"
+  VECTOR_STORE_DIM: "1536"
   PGVECTOR_EF_SEARCH: "40"
+  # Legacy Chroma (unused in pgvector mode but kept for local)
   CHROMA_PORT: "8000"
   CHROMA_COLLECTION_NAME: "rag_collection"
   CHROMA_ALLOW_RESET: "false"

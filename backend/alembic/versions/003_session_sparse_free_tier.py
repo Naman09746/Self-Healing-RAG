@@ -86,9 +86,16 @@ def upgrade() -> None:
         pass
 
     # Ensure query_cache_chunks for pgvector QueryCache (avoid auto-create race)
+    import os as _os
+    try:
+        _qc_dim = int(_os.getenv("VECTOR_STORE_DIM", "1536"))
+        if _qc_dim not in (768, 1536, 3072):
+            _qc_dim = 1536
+    except Exception:
+        _qc_dim = 1536
     try:
         op.execute(
-            """
+            f"""
             CREATE TABLE IF NOT EXISTS query_cache_chunks (
                 id TEXT PRIMARY KEY,
                 tenant_id TEXT NOT NULL,
@@ -96,8 +103,8 @@ def upgrade() -> None:
                 chunk_id TEXT NOT NULL,
                 chunk_index INT NOT NULL,
                 content TEXT NOT NULL,
-                embedding vector(768),
-                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                embedding vector({_qc_dim}),
+                metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
                 created_at TIMESTAMPTZ DEFAULT now()
             )
             """

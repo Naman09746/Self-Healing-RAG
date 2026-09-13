@@ -209,15 +209,42 @@ class PgVectorStore:
             raise
         # Validate dim — fail-closed if strict, auto-sync if 768->1536 transition
         if embeddings and len(embeddings[0]) != self.dim:
-            if self.dim == 768 and len(embeddings[0]) in (1536, 3072):
-                logger.info("Auto-syncing pgvector dimension", old_dim=self.dim, new_dim=len(embeddings[0]))
-                self.dim = len(embeddings[0])
+            got_dim = len(embeddings[0])
+            if self.dim == 768 and got_dim in (1536, 3072):
+                logger.info("Auto-syncing pgvector dimension", old_dim=self.dim, new_dim=got_dim)
+                # Attempt to ALTER in background (best-effort); if it fails, raise clear error to force migration 006
+                try:
+                    import asyncio as _aio
+                    async def _alter_dim():
+                        try:
+                            eng = self._get_engine()
+                            async with eng.begin() as conn:
+                                try:
+                                    await conn.execute(text(f"DROP INDEX IF EXISTS idx_{self.table}_hnsw"))
+                                except Exception:
+                                    pass
+                                await conn.execute(text(f"ALTER TABLE {self.table} ALTER COLUMN embedding TYPE vector({got_dim})"))
+                                try:
+                                    await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_hnsw ON {self.table} USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=64)"))
+                                except Exception:
+                                    pass
+                        except Exception as e:
+                            logger.warning("Auto ALTER vector dim failed, run alembic upgrade 006", error=str(e))
+                    # Only attempt if we are already in async context; otherwise defer to next _ensure_table
+                    try:
+                        _aio.get_running_loop()
+                        _aio.create_task(_alter_dim())
+                    except RuntimeError:
+                        pass
+                except Exception:
+                    pass
+                self.dim = got_dim
             else:
-                msg = f"Embedding dim mismatch for pgvector: expected {self.dim} got {len(embeddings[0])} (model {self._embed.model})"
+                msg = f"Embedding dim mismatch for pgvector: expected {self.dim} got {got_dim} (model {self._embed.model}) — run alembic upgrade 006 to align vector({self.dim})→vector({got_dim})"
                 if getattr(settings, "EMBEDDING_STRICT_DIM", True):
-                    logger.error(msg)
-                    raise RuntimeError(msg + " — fix VECTOR_STORE_DIM or EMBEDDING_MODEL")
-                logger.warning(msg)
+                    logger.error(msg, expected=self.dim, got=got_dim, table=self.table)
+                    raise RuntimeError(msg + " — fix VECTOR_STORE_DIM or EMBEDDING_MODEL, or apply migration 006. Existing rows with wrong dim will be ignored (0 results) until re-ingested.")
+                logger.warning(msg, expected=self.dim, got=got_dim, table=self.table)
         sess_maker = self._get_sessionmaker()
         async with sess_maker() as session:
             for i, (content, emb, meta, cid) in enumerate(zip(chunks, embeddings, enriched, ids)):

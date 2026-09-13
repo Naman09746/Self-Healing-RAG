@@ -252,31 +252,31 @@ class MetricsRegistry:
                         self._phase_timings[phase].pop(0)
 
     def get_snapshot(self) -> dict:
-        """Compute live dynamic snapshot of RAG pipeline telemetry."""
+        """Compute live dynamic snapshot of RAG pipeline telemetry — no synthetic defaults when empty."""
         queries = self._query_count
         avg_lat = (
             round(sum(self._latencies_ms) / len(self._latencies_ms), 1)
             if self._latencies_ms
-            else 242.0
+            else 0.0
         )
         avg_ground = (
             round(sum(self._grounding_scores) / len(self._grounding_scores), 3)
             if self._grounding_scores
-            else 0.984
+            else 0.0
         )
         total_cache = self._cache_hits + self._cache_misses
-        cache_rate = round(self._cache_hits / total_cache, 2) if total_cache > 0 else 0.42
+        cache_rate = round(self._cache_hits / total_cache, 2) if total_cache > 0 else 0.0
 
-        # Rolling trend sequences for sparklines (up to 12 recent points)
+        # Rolling trend sequences for sparklines (up to 12 recent points) — empty when no data, so UI shows no-data state
         lat_trend = (
             self._latencies_ms[-12:]
-            if len(self._latencies_ms) >= 3
-            else [280, 260, 310, 240, 230, 220, 245, 235, 225, 240, 230, avg_lat]
+            if len(self._latencies_ms) >= 1
+            else []
         )
         ground_trend = (
             [round(s * 100, 1) for s in self._grounding_scores[-12:]]
-            if len(self._grounding_scores) >= 3
-            else [91, 93, 92, 95, 94, 96, 97, 98, 98, 97, 98, round(avg_ground * 100, 1)]
+            if len(self._grounding_scores) >= 1
+            else []
         )
 
         phase_averages: dict[str, float] = {}
@@ -290,7 +290,7 @@ class MetricsRegistry:
         for phase, default_ms in defaults.items():
             samples = self._phase_timings.get(phase, [])
             phase_averages[phase] = (
-                round(sum(samples) / len(samples), 1) if samples else default_ms
+                round(sum(samples) / len(samples), 1) if samples else 0.0
             )
 
         return {

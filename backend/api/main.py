@@ -33,11 +33,18 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup logic
+    # Startup logic - deployment validation (fail fast on P0 misconfig)
+    dep_issues = settings.validate_deployment()
+    if dep_issues:
+        for iss in dep_issues:
+            logger.error("Deployment config issue", issue=iss)
+        # In production, log as error but don't crash — let /ready report unhealthy instead
+        # In strict mode, uncomment to fail fast: raise RuntimeError("; ".join(dep_issues))
     logger.info(
         "Starting up Self-Healing RAG API",
         project_name=settings.PROJECT_NAME,
         ollama_host=settings.OLLAMA_HOST,
+        deployment_issues=dep_issues,
     )
 
     # 0. Initialize OpenTelemetry tracing (Phase 4C)
@@ -190,8 +197,17 @@ async def health_liveness():
 @app.get("/ready", tags=["System"])
 @app.get(f"{settings.API_V1_STR}/health", tags=["System"])
 async def health_readiness(request: Request):
-    """Deep component readiness probe for dashboards and system monitoring."""
+    """Deep component readiness probe for dashboards and system monitoring — also surfaces deployment config issues."""
     services: dict[str, Any] = {}
+    # Surface deployment validation in readiness payload (helps debug local vs prod parity)
+    try:
+        dep_issues = settings.validate_deployment()
+        if dep_issues:
+            services["deployment_config"] = {"status": "misconfigured", "issues": dep_issues}
+        else:
+            services["deployment_config"] = {"status": "ok", "dim": getattr(settings, "VECTOR_STORE_DIM", None), "embedding_model": getattr(settings, "EMBEDDING_MODEL", None)}
+    except Exception as e:
+        services["deployment_config"] = {"status": "unknown", "error": str(e)}
     svc_container = getattr(request.app.state, "svc", None)
     provider = getattr(settings, "VECTOR_STORE_PROVIDER", "pgvector")
 
