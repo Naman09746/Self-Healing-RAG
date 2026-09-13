@@ -115,6 +115,9 @@ async def stream_rag_pipeline(
             cached = None
     if cached:
         logger.info("Serving from semantic cache (stream)", query=query)
+        cached_meta = cached.get("metadata", {}) if isinstance(cached, dict) else {}
+        cached_grounding = cached_meta.get("grounding_score", 1.0)
+        cached_chunks = cached_meta.get("chunks_retrieved", 0)
         yield _sse("phase", {"phase": "cache_hit", "retry_count": 0})
         yield _sse("token", {"token": cached["answer"], "session_id": session_id})
         yield _sse(
@@ -123,11 +126,11 @@ async def stream_rag_pipeline(
                 "session_id": session_id,
                 "query": query,
                 "answer": cached["answer"],
-                "chunks_retrieved": 0,
+                "chunks_retrieved": cached_chunks,
                 "status": "cached",
-                "grounding_score": 0.0,
+                "grounding_score": float(cached_grounding) if cached_grounding is not None else 1.0,
                 "retry_count": 0,
-                "complexity_score": 0.0,
+                "complexity_score": float(cached_meta.get("complexity_score", 0.0)),
                 "verification_mode": "cached",
                 "is_hallucinated": False,
             },

@@ -89,12 +89,20 @@ async def run_rag_pipeline(
                         )
                     except Exception:
                         pass
+                cached_meta = cached.get("metadata", {}) if isinstance(cached, dict) else {}
+                cached_grounding = cached_meta.get("grounding_score", 1.0)
+                cached_chunks = cached_meta.get("chunks_retrieved", 0)
                 return {
                     "query": query,
                     "answer": cached["answer"],
                     "session_id": session_id,
-                    "chunks_retrieved": 0,
+                    "chunks_retrieved": cached_chunks,
                     "status": "cached",
+                    "grounding_score": float(cached_grounding) if cached_grounding is not None else 1.0,
+                    "retry_count": 0,
+                    "complexity_score": float(cached_meta.get("complexity_score", 0.0)),
+                    "verification_mode": "cached",
+                    "is_hallucinated": False,
                 }
 
         pipeline_span.set_attribute("cached", False)
