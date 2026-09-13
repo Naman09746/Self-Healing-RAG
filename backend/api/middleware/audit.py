@@ -19,7 +19,7 @@ from backend.core.audit import log_api_request
 logger = get_logger(__name__)
 
 # Paths to exclude from audit logging (health checks, static assets)
-EXCLUDED_PATHS = {"/health", "/", "/favicon.ico"}
+EXCLUDED_PATHS = {"/health", "/ready", "/ping", "/healthz", "/", "/favicon.ico"}
 EXCLUDED_PREFIXES = ("/docs", "/openapi", "/redoc")
 
 

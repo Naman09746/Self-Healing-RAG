@@ -176,10 +176,21 @@ app.include_router(experiments.router, prefix=settings.API_V1_STR)
 app.include_router(websocket.router, tags=["WebSocket"])
 
 
-@app.get("/health")
-@app.get(f"{settings.API_V1_STR}/health")
-async def health_check(request: Request):
-    """Component health check probing VectorStore (pgvector/qdrant/pinecone), Session Store, Postgres, and Ollama/LLM."""
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["System"])
+@app.api_route("/ping", methods=["GET", "HEAD"], tags=["System"])
+@app.api_route("/healthz", methods=["GET", "HEAD"], tags=["System"])
+async def health_liveness():
+    """Ultra-fast, zero-overhead liveness probe for keep-alive schedulers (e.g. cron-job.org).
+    
+    Returns 200 OK immediately with no database queries, no LLM calls, and no side effects.
+    """
+    return {"status": "ok"}
+
+
+@app.get("/ready", tags=["System"])
+@app.get(f"{settings.API_V1_STR}/health", tags=["System"])
+async def health_readiness(request: Request):
+    """Deep component readiness probe for dashboards and system monitoring."""
     services: dict[str, Any] = {}
     svc_container = getattr(request.app.state, "svc", None)
     provider = getattr(settings, "VECTOR_STORE_PROVIDER", "pgvector")

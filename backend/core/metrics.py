@@ -334,7 +334,7 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
     - In-progress request gauge by method
     """
 
-    EXCLUDED_PATHS = {"/metrics", "/health", "/favicon.ico"}
+    EXCLUDED_PATHS = {"/metrics", "/health", "/ready", "/ping", "/healthz", "/favicon.ico"}
     EXCLUDED_PREFIXES = ("/docs", "/openapi", "/redoc")
 
     async def dispatch(self, request: Request, call_next):

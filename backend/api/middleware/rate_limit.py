@@ -83,6 +83,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Skip preflight requests, health checks, metrics, and docs
         if request.method == "OPTIONS" or request.url.path in {
             "/health",
+            "/ready",
+            "/ping",
+            "/healthz",
             "/api/v1/health",
             "/metrics",
             "/docs",

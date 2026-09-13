@@ -7,10 +7,18 @@ def client():
     return TestClient(app)
 
 def test_health_check(client):
-    """Test the health check endpoint."""
+    """Test the lightweight liveness health check endpoint."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
+    assert response.json()["status"] == "ok"
+
+
+def test_ping_endpoint(client):
+    """Test the /ping liveness endpoint."""
+    response = client.get("/ping")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
 
 def test_root(client):
     """Test the root endpoint."""
@@ -18,9 +26,17 @@ def test_root(client):
     assert response.status_code == 200
     assert "Welcome" in response.json()["message"]
 
+
 def test_api_v1_health(client):
-    """Test the /api/v1/health endpoint."""
+    """Test the /api/v1/health deep readiness endpoint."""
     response = client.get("/api/v1/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
+
+
+def test_ready_endpoint(client):
+    """Test the /ready deep readiness endpoint."""
+    response = client.get("/ready")
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
 

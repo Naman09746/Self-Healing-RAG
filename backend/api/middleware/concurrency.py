@@ -73,7 +73,7 @@ class ConcurrencyControlMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Skip for health checks and static paths
         path = request.url.path
-        if path in ("/health", "/") or path.startswith("/docs") or path.startswith("/openapi"):
+        if path in ("/health", "/ready", "/ping", "/healthz", f"{settings.API_V1_STR}/health", "/") or path.startswith("/docs") or path.startswith("/openapi"):
             return await call_next(request)
 
         user_key = self._get_user_key(request)
