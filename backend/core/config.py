@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator, AliasChoices
+from pydantic import Field, field_validator, model_validator, AliasChoices
 from typing import Any, Union
 
 
@@ -382,6 +382,22 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return [str(x) for x in v]
         return ["*"]
+
+    @model_validator(mode="after")
+    def auto_align_embedding_dim(self) -> "Settings":
+        """Auto-align VECTOR_STORE_DIM if OpenAI/OpenRouter embedding model is used."""
+        emb_model = (getattr(self, "EMBEDDING_MODEL", "") or "").lower()
+        if (
+            "text-embedding-3-small" in emb_model
+            or "text-embedding-ada-002" in emb_model
+            or ("openai" in emb_model and "768" not in emb_model)
+        ):
+            if self.VECTOR_STORE_DIM == 768:
+                self.VECTOR_STORE_DIM = 1536
+        elif "text-embedding-3-large" in emb_model:
+            if self.VECTOR_STORE_DIM == 768:
+                self.VECTOR_STORE_DIM = 3072
+        return self
 
 
     def with_overrides(self, **kwargs: Any) -> "Settings":

@@ -148,6 +148,10 @@ class EmbeddingProvider:
             return
         got = len(vecs[0])
         if got != self.dim:
+            if self.dim == 768 and got in (1536, 3072):
+                logger.info("Auto-syncing embedding provider dimension", old_dim=self.dim, new_dim=got)
+                self.dim = got
+                return
             msg = f"Embedding dim mismatch: configured {self.dim} but provider returned {got} for model {self.model}"
             if getattr(settings, "EMBEDDING_STRICT_DIM", True):
                 logger.error(msg)

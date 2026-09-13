@@ -122,6 +122,28 @@ class PgVectorStore:
                     )
                 )
                 try:
+                    await conn.execute(
+                        text(
+                            f"""
+                            DO $$
+                            BEGIN
+                                IF EXISTS (
+                                    SELECT 1 FROM information_schema.columns 
+                                    WHERE table_name = '{self.table}' AND column_name = 'embedding'
+                                ) THEN
+                                    BEGIN
+                                        ALTER TABLE {self.table} ALTER COLUMN embedding TYPE vector({self.dim});
+                                    EXCEPTION WHEN OTHERS THEN
+                                        NULL;
+                                    END;
+                                END IF;
+                            END $$;
+                            """
+                        )
+                    )
+                except Exception:
+                    pass
+                try:
                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tenant ON {self.table}(tenant_id)"))
                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_doc ON {self.table}(document_id)"))
                 except Exception as e:
@@ -185,13 +207,17 @@ class PgVectorStore:
         except Exception as e:
             logger.error("Embedding generation failed for pgvector add_chunks", error=str(e))
             raise
-        # Validate dim — fail-closed if strict
+        # Validate dim — fail-closed if strict, auto-sync if 768->1536 transition
         if embeddings and len(embeddings[0]) != self.dim:
-            msg = f"Embedding dim mismatch for pgvector: expected {self.dim} got {len(embeddings[0])} (model {self._embed.model})"
-            if getattr(settings, "EMBEDDING_STRICT_DIM", True):
-                logger.error(msg)
-                raise RuntimeError(msg + " — fix VECTOR_STORE_DIM or EMBEDDING_MODEL")
-            logger.warning(msg)
+            if self.dim == 768 and len(embeddings[0]) in (1536, 3072):
+                logger.info("Auto-syncing pgvector dimension", old_dim=self.dim, new_dim=len(embeddings[0]))
+                self.dim = len(embeddings[0])
+            else:
+                msg = f"Embedding dim mismatch for pgvector: expected {self.dim} got {len(embeddings[0])} (model {self._embed.model})"
+                if getattr(settings, "EMBEDDING_STRICT_DIM", True):
+                    logger.error(msg)
+                    raise RuntimeError(msg + " — fix VECTOR_STORE_DIM or EMBEDDING_MODEL")
+                logger.warning(msg)
         sess_maker = self._get_sessionmaker()
         async with sess_maker() as session:
             for i, (content, emb, meta, cid) in enumerate(zip(chunks, embeddings, enriched, ids)):
