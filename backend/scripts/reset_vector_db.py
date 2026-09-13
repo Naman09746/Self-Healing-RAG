@@ -15,19 +15,19 @@ async def reset_vector_db():
         from sqlalchemy import text
         
         # We need to truncate both document_chunks and query_cache_chunks
-        tables = ["document_chunks", "query_cache_chunks"]
+        tables = ["vector_chunks", "query_cache_chunks", "document_chunks"]
         
         # Use any instance to get the sessionmaker
-        store = PgVectorStore(table="document_chunks")
+        store = PgVectorStore(table="vector_chunks")
         sess_maker = store._get_sessionmaker()
         
         async with sess_maker() as session:
             for table in tables:
                 try:
-                    await session.execute(text(f"TRUNCATE TABLE {table};"))
-                    logger.info(f"Successfully truncated table: {table}")
+                    await session.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE;"))
+                    logger.info(f"Successfully dropped table: {table}")
                 except Exception as e:
-                    logger.error(f"Failed to truncate {table} (it may not exist yet): {e}")
+                    logger.error(f"Failed to drop {table}: {e}")
             await session.commit()
             
     elif provider == "qdrant":

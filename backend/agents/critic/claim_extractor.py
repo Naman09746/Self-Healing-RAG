@@ -31,25 +31,34 @@ CLAIMS:
 
             try:
                 response = await self.client.generate(prompt, format="json")
-                # Parse JSON robustly
+                clean_resp = response.strip()
+                # Strip markdown code fences if present
+                if "```json" in clean_resp:
+                    clean_resp = clean_resp.split("```json", 1)[1].split("```", 1)[0].strip()
+                elif "```" in clean_resp:
+                    clean_resp = clean_resp.split("```", 1)[1].split("```", 1)[0].strip()
+
                 parsed = None
                 try:
-                    start = response.find("[")
-                    end = response.rfind("]") + 1
+                    start = clean_resp.find("[")
+                    end = clean_resp.rfind("]") + 1
                     if start >= 0 and end > start:
-                        parsed = json.loads(response[start:end])
+                        parsed = json.loads(clean_resp[start:end])
                 except Exception:
                     pass
                 if parsed is None:
                     try:
-                        start = response.find("{")
-                        end = response.rfind("}") + 1
+                        start = clean_resp.find("{")
+                        end = clean_resp.rfind("}") + 1
                         if start >= 0 and end > start:
-                            parsed = json.loads(response[start:end])
-                        else:
-                            parsed = json.loads(response)
+                            parsed = json.loads(clean_resp[start:end])
                     except Exception:
-                        parsed = json.loads(response)
+                        pass
+                if parsed is None:
+                    try:
+                        parsed = json.loads(clean_resp)
+                    except Exception:
+                        parsed = None
 
                 claims: List[str] = []
                 if isinstance(parsed, list):

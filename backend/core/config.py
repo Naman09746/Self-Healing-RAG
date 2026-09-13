@@ -62,7 +62,7 @@ class Settings(BaseSettings):
         default=False,
         description="Enable deterministic hash embedding fallback if provider fails. Must be False in production to prevent DB poisoning.",
     )
-    LLM_TIMEOUT: int = Field(default=30, description="Hard timeout for LLM calls in seconds.")
+    LLM_TIMEOUT: int = Field(default=60, description="Hard timeout for LLM calls in seconds.")
 
     # Vector Store Settings — Pluggable Provider
     VECTOR_STORE_PROVIDER: str = Field(
