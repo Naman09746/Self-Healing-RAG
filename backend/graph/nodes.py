@@ -362,29 +362,35 @@ def create_output_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]]:
             state.session_id, "assistant", answer
         )
 
-        # Async cache write (non-blocking but await if possible)
-        try:
-            cache_meta = {
-                "grounding_score": state.grounding_score if state.grounding_score is not None else 1.0,
-                "complexity_score": getattr(state, "complexity_score", 0.0),
-                "chunks_retrieved": len(getattr(state, "retrieved_chunks", []) or []),
-            }
-            if hasattr(deps.query_cache, "cache_query_async"):
-                await deps.query_cache.cache_query_async(
-                    state.original_query or state.query,
-                    answer,
-                    cache_meta,
-                    tenant_id=state.tenant_id,
-                )
-            else:
-                deps.query_cache.cache_query(
-                    state.original_query or state.query,
-                    answer,
-                    cache_meta,
-                    tenant_id=state.tenant_id,
-                )
-        except Exception as e:
-            logger.debug("Cache store failed in output node", error=str(e))
+        # Async cache write (only for grounded, positive answers — never cache fast-fail fallbacks)
+        if (
+            not state.no_relevant_chunks
+            and answer
+            and "Information not available in knowledge base" not in answer
+            and not getattr(state, "is_hallucinated", False)
+        ):
+            try:
+                cache_meta = {
+                    "grounding_score": state.grounding_score if state.grounding_score is not None else 1.0,
+                    "complexity_score": getattr(state, "complexity_score", 0.0),
+                    "chunks_retrieved": len(getattr(state, "retrieved_chunks", []) or []),
+                }
+                if hasattr(deps.query_cache, "cache_query_async"):
+                    await deps.query_cache.cache_query_async(
+                        state.original_query or state.query,
+                        answer,
+                        cache_meta,
+                        tenant_id=state.tenant_id,
+                    )
+                else:
+                    deps.query_cache.cache_query(
+                        state.original_query or state.query,
+                        answer,
+                        cache_meta,
+                        tenant_id=state.tenant_id,
+                    )
+            except Exception as e:
+                logger.debug("Cache store failed in output node", error=str(e))
 
         return {"final_answer": answer, "current_phase": "completed"}
 

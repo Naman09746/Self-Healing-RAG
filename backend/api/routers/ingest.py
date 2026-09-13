@@ -163,6 +163,14 @@ async def ingest_file(
             except Exception:
                 pass
 
+        # Invalidate semantic query cache for this tenant so newly ingested info is immediately queried
+        try:
+            from backend.graph.container import svc
+            if svc.query_cache and hasattr(svc.query_cache, "clear_tenant_cache_async"):
+                await svc.query_cache.clear_tenant_cache_async(tenant_id)
+        except Exception as cache_err:
+            logger.debug("Cache invalidation on ingest skipped", error=str(cache_err))
+
         logger.info("Ingestion complete", file_name=safe_name, tenant_id=tenant_id, user_uuid=current_user.user_uuid, file_hash=result_file_hash[:12], chunks=result.get("chunk_count", 0), mime_type=result.get("mime_type"))
         # Return enriched result with file metadata
         return {

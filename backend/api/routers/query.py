@@ -211,3 +211,18 @@ async def query_rag_stream(
         },
     )
 
+
+@router.post("/cache/clear")
+async def clear_query_cache(
+    fastapi_request: Request,
+    current_user: Annotated[DBUser, Depends(get_current_user)],
+):
+    """Clear all semantic query cache entries for the current tenant."""
+    tenant_id = current_user.tenant_id or current_user.user_uuid
+    svc = getattr(fastapi_request.app.state, "svc", None)
+    cleared = 0
+    if svc and svc.query_cache and hasattr(svc.query_cache, "clear_tenant_cache_async"):
+        cleared = await svc.query_cache.clear_tenant_cache_async(tenant_id)
+    return {"status": "ok", "tenant_id": tenant_id, "cleared_entries": cleared}
+
+

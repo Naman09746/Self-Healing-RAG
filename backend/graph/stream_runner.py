@@ -113,7 +113,12 @@ async def stream_rag_pipeline(
                 cached = None
         except Exception:
             cached = None
-    if cached:
+    if (
+        cached
+        and isinstance(cached, dict)
+        and cached.get("answer")
+        and "Information not available in knowledge base" not in str(cached["answer"])
+    ):
         logger.info("Serving from semantic cache (stream)", query=query)
         cached_meta = cached.get("metadata", {}) if isinstance(cached, dict) else {}
         cached_grounding = cached_meta.get("grounding_score", 1.0)

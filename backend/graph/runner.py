@@ -77,7 +77,12 @@ async def run_rag_pipeline(
                         cached = maybe2
                 except Exception:
                     cached = None
-            if cached:
+            if (
+                cached
+                and isinstance(cached, dict)
+                and cached.get("answer")
+                and "Information not available in knowledge base" not in str(cached["answer"])
+            ):
                 pipeline_span.set_attribute("cached", True)
                 pipeline_span.set_status(trace.Status(trace.StatusCode.OK))
                 logger.info("Serving from semantic cache", query=query)
