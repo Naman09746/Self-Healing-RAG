@@ -9,7 +9,7 @@ logger = get_logger(__name__)
 
 
 class ClaimExtractor:
-    def __init__(self, model: str = None):
+    def __init__(self, model: str | None = None) -> None:
         self.client = LLMClient(model=model)
 
     async def extract_claims(self, answer: str) -> List[str]:

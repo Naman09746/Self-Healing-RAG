@@ -65,7 +65,7 @@ REWRITTEN QUERY:"""
 
 
 class QueryRewriter:
-    def __init__(self, model: str = None):
+    def __init__(self, model: str | None = None) -> None:
         self.client = LLMClient(model=model)
 
     async def rewrite_query(

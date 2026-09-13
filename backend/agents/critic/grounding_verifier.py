@@ -71,7 +71,7 @@ class GroundingVerifier:
     but the primary entry point is verify_claims_parallel().
     """
 
-    def __init__(self, model: str = None):
+    def __init__(self, model: str | None = None) -> None:
         self.client = LLMClient(model=model)
         # Instance semaphore allows per-verifier control; falls back to global
         self._semaphore = _semaphore

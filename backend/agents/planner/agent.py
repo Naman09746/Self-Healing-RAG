@@ -7,7 +7,7 @@ import json
 logger = get_logger(__name__)
 
 class PlannerAgent:
-    def __init__(self, model: str = None):
+    def __init__(self, model: str | None = None) -> None:
         self.model = model or settings.SMALL_MODEL_NAME
         self.client = LLMClient(model=self.model)
 

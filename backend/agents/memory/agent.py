@@ -6,7 +6,7 @@ import uuid
 logger = get_logger(__name__)
 
 class MemoryAgent:
-    def __init__(self, model: str = None):
+    def __init__(self, model: str | None = None) -> None:
         self.client = LLMClient(model=model)
         self._memory_store = None
 

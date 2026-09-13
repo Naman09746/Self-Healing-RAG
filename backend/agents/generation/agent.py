@@ -23,7 +23,7 @@ def _clean_response(text: str) -> str:
 
 
 class GenerationAgent:
-    def __init__(self, model: str = None):
+    def __init__(self, model: str | None = None) -> None:
         self.client = LLMClient(model=model)
 
     def _build_prompt(self, query: str, context_chunks: List[str], history: str = "") -> str:

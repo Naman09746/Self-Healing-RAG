@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 
 
 class CriticAgent:
-    def __init__(self, model: str = None):
+    def __init__(self, model: str | None = None) -> None:
         self.model = model or settings.SMALL_MODEL_NAME
         self.extractor = ClaimExtractor(model=self.model)
         self.verifier = GroundingVerifier(model=self.model)
