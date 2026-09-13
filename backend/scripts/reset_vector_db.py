@@ -6,7 +6,7 @@ from backend.storage.vector.embeddings import EmbeddingProvider
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def reset_vector_db():
+async def reset_vector_db() -> None:
     provider = getattr(settings, "VECTOR_STORE_PROVIDER", "pgvector").lower()
     logger.info(f"Resetting vector database for provider: {provider}")
 
@@ -39,15 +39,16 @@ async def reset_vector_db():
         
         collections = ["document_chunks", "query_cache"]
         client = doc_store._client
-        for coll in collections:
-            try:
-                if client.collection_exists(coll):
-                    client.delete_collection(coll)
-                    logger.info(f"Successfully deleted collection: {coll}")
-                else:
-                    logger.info(f"Collection {coll} does not exist, skipping.")
-            except Exception as e:
-                logger.error(f"Failed to delete Qdrant collection {coll}: {e}")
+        if client is not None:
+            for coll in collections:
+                try:
+                    if hasattr(client, "collection_exists") and client.collection_exists(coll):
+                        client.delete_collection(coll)
+                        logger.info(f"Successfully deleted collection: {coll}")
+                    else:
+                        logger.info(f"Collection {coll} does not exist, skipping.")
+                except Exception as e:
+                    logger.error(f"Failed to delete Qdrant collection {coll}: {e}")
                 
     elif provider == "pinecone":
         from backend.storage.vector.pinecone import PineconeStore
