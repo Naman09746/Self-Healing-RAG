@@ -182,6 +182,9 @@ class Settings(BaseSettings):
     RELEVANCE_THRESHOLD: float = 0.5
     GROUNDING_THRESHOLD: float = 0.5
     MAX_HISTORY_TURNS: int = 5
+    RRF_DENSE_WEIGHT: float = 1.0
+    RRF_SPARSE_WEIGHT: float = 1.0
+    RRF_JACCARD_THRESHOLD: float = 0.85
 
     # Embedding Hardening (Phase 0.3) — fail-closed in prod
     EMBEDDING_STRICT_DIM: bool = Field(default=True, description="If True, raise on embedding dim mismatch instead of warning.")

@@ -156,9 +156,12 @@ class HybridRetriever:
                         "distance": dist_f,
                     })
 
-            # 4. Reciprocal Rank Fusion (RRF)
+            # 4. Reciprocal Rank Fusion (RRF) with weighted Dense/Sparse and Jaccard Deduplication
             with tracer.start_as_current_span("rrf_fusion") as rrf_span:
                 fused_scores = {}
+                dense_weight = float(getattr(settings, "RRF_DENSE_WEIGHT", 1.0))
+                sparse_weight = float(getattr(settings, "RRF_SPARSE_WEIGHT", 1.0))
+                jaccard_threshold = float(getattr(settings, "RRF_JACCARD_THRESHOLD", 0.85))
 
                 def update_scores(results, weight=1.0):
                     for rank, res in enumerate(results):
@@ -177,17 +180,32 @@ class HybridRetriever:
                             if cur is None or d < cur:
                                 fused_scores[content]["distance"] = d
 
-                update_scores(vector_results, weight=1.0)
-                update_scores(sparse_results, weight=1.0)
+                update_scores(vector_results, weight=dense_weight)
+                update_scores(sparse_results, weight=sparse_weight)
 
-                sorted_results = sorted(
+                sorted_candidates = sorted(
                     [{"content": c, **v} for c, v in fused_scores.items()],
                     key=lambda x: x["score"],
                     reverse=True
                 )
 
-                final_results = sorted_results[:k]
+                # Deduplicate high-overlap chunks (Jaccard similarity >= threshold) before top-k truncation
+                def _compute_jaccard(t1: str, t2: str) -> float:
+                    w1 = set(t1.lower().split())
+                    w2 = set(t2.lower().split())
+                    if not w1 or not w2:
+                        return 0.0
+                    return len(w1 & w2) / len(w1 | w2)
+
+                deduped_candidates: List[Dict[str, Any]] = []
+                for cand in sorted_candidates:
+                    c_text = cand.get("content", "")
+                    if not any(_compute_jaccard(c_text, kept.get("content", "")) >= jaccard_threshold for kept in deduped_candidates):
+                        deduped_candidates.append(cand)
+
+                final_results = deduped_candidates[:k]
                 rrf_span.set_attribute("candidates", len(fused_scores))
+                rrf_span.set_attribute("deduped_count", len(deduped_candidates))
                 rrf_span.set_attribute("final_count", len(final_results))
 
             # Add graph context as independent entries with knowledge_graph source
@@ -217,12 +235,18 @@ class HybridRetriever:
                             "chunk_id": entry["chunk_id"],
                             "distance": None,
                         }
-                # Re-sort after adding graph entries
-                final_results = sorted(
+                # Re-sort and re-deduplicate after adding graph entries
+                sorted_candidates = sorted(
                     [{"content": c, **v} for c, v in fused_scores.items()],
                     key=lambda x: x["score"],
                     reverse=True
-                )[:k]
+                )
+                deduped_candidates = []
+                for cand in sorted_candidates:
+                    c_text = cand.get("content", "")
+                    if not any(_compute_jaccard(c_text, kept.get("content", "")) >= jaccard_threshold for kept in deduped_candidates):
+                        deduped_candidates.append(cand)
+                final_results = deduped_candidates[:k]
                 span.set_attribute("graph_results", len(graph_results))
 
             # Audit log the retrieval operation
