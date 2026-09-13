@@ -1,3 +1,4 @@
+import re
 from typing import List, Dict, Any, AsyncGenerator
 from opentelemetry import trace
 from backend.core.logging import get_logger
@@ -5,6 +6,20 @@ from backend.core.observability import get_tracer
 from backend.agents.generation.llm_client import LLMClient
 
 logger = get_logger(__name__)
+
+
+def _clean_response(text: str) -> str:
+    """Strip reasoning monologues, <think> tags, and verbose thought preambles."""
+    if not text:
+        return ""
+    # Strip <think>...</think> and <thought>...</thought> tags
+    cleaned = re.sub(r"<(think|thought)>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    # If the model echoed internal thinking preamble, extract the final answer
+    if "Here's a thinking process:" in cleaned or "Here is a thinking process:" in cleaned:
+        parts = re.split(r"(?:Final Answer:|ANSWER:|\n\nConclusion:)", cleaned, flags=re.IGNORECASE)
+        if len(parts) > 1 and parts[-1].strip():
+            cleaned = parts[-1].strip()
+    return cleaned.strip()
 
 
 class GenerationAgent:
@@ -47,11 +62,12 @@ ANSWER:"""
             span.set_attribute("prompt_length", len(prompt))
 
             response = await self.client.generate(prompt)
-            span.set_attribute("answer_length", len(response))
+            clean_ans = _clean_response(response)
+            span.set_attribute("answer_length", len(clean_ans))
             span.set_status(trace.Status(trace.StatusCode.OK))
 
             return {
-                "answer": response,
+                "answer": clean_ans,
                 "model": self.client.model,
                 "context_used": len(context_chunks),
             }
