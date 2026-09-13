@@ -58,6 +58,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SMALL_MODEL_NAME", "LLM_SMALL_MODEL"),
     )
     EMBEDDING_MODEL: str = Field(default="nomic-embed-text")
+    EMBEDDING_FALLBACK_ENABLED: bool = Field(
+        default=False,
+        description="Enable deterministic hash embedding fallback if provider fails. Must be False in production to prevent DB poisoning.",
+    )
     LLM_TIMEOUT: int = Field(default=30, description="Hard timeout for LLM calls in seconds.")
 
     # Vector Store Settings — Pluggable Provider
@@ -181,7 +185,6 @@ class Settings(BaseSettings):
 
     # Embedding Hardening (Phase 0.3) — fail-closed in prod
     EMBEDDING_STRICT_DIM: bool = Field(default=True, description="If True, raise on embedding dim mismatch instead of warning.")
-    EMBEDDING_FALLBACK_ENABLED: bool = Field(default=True, description="If False, hash fallback is disabled and embedding failures raise. Production should set False; tests/offline set True.")
     GRAPH_EXTRACTION_ENABLED: bool = Field(default=False, description="If True, ingestion extracts graph entities via LLM. Disabled by default to avoid 8s ingest latency; enable for graph RAG.")
 
     # LangGraph Checkpointer

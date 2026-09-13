@@ -277,6 +277,7 @@ def create_critic_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]]:
 
         context = [c.content for c in state.retrieved_chunks]
         # Critic fast-path for simple queries (Decision 1C / Phase 1C)
+        # Trades 4-verdict extraction granularity for <1.5s p95 SLA on simple queries
         if state.complexity_score < 0.3 and hasattr(deps.critic, "verify_grounding_fast"):
             result = await deps.critic.verify_grounding_fast(
                 state.query, gen_result.answer, context, history=state.history_context

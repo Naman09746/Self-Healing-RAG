@@ -72,6 +72,10 @@ Thumbs.db
 # ── Development Scratch ─────────────────────────────────────
 scratch/
 tmp/
+test_connections.py
+test_cache.py
+test_queries.py
+truncate_db.py
 
 # ── Graphify Artifacts (regenerate on demand) ───────────────
 graphify-out/cache/

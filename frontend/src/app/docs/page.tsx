@@ -128,7 +128,7 @@ Retriever Agent — Executes hybrid search across all storage backends using Rec
 
 Generator Agent — Constructs contextual answers using retrieved chunks respecting context window limits, with source citations embedded in the response.
 
-Critic Agent — Extracts every factual claim from generated text and verifies each against retrieved context, classifying claims as verified, unsupported, or contradicted.
+Critic Agent — Extracts every factual claim from generated text and verifies each against retrieved context, classifying claims into 4 categories (supported, partially supported, unsupported, or contradicted).
 
 Healer Agent — Activates when unverifiable claims are detected, rewriting the query and re-retrieving context with adjusted parameters through up to N retry attempts.
 
@@ -152,12 +152,12 @@ Results are fused using Reciprocal Rank Fusion (RRF), optionally re-ranked throu
 
 1. Detection — Critic identifies claims that cannot be verified against retrieved context
 2. Analysis — Healer Agent analyzes what went wrong (ambiguous query, insufficient context, retrieval failure)
-3. Rewrite — Healer reformulates the original query with additional context
-4. Re-retrieve — Retrieval Agent re-executes with the rewritten query, often with relaxed similarity thresholds
+3. Rewrite — Healer reformulates the query using targeted templates (targeted healing, retrieval expansion, or aggressive rewrite)
+4. Re-retrieve — Retrieval Agent re-executes with the rewritten query tailored to the healing target (targeted healing, retrieval expansion, or aggressive rewrite per query_rewriter.py:17-50; similarity threshold RELEVANCE_THRESHOLD config.py:182 and k from nodes.py:113 remain consistent)
 5. Re-generate — Generator produces a new answer from the improved context
 6. Re-verify — Critic re-verifies all claims; if still failing, the cycle repeats
 
-The system configures a maximum retry limit (default: 3) to prevent infinite loops. Each retry logs telemetry for observability.`,
+The system configures a maximum retry limit (default: 1 in production per state.py:188 and config.py:181 for latency/cost control, configurable via settings.MAX_RETRIES) to prevent infinite loops. Each retry logs telemetry for observability.`,
   },
   hallucination: {
     title: "Hallucination Detection",
@@ -165,12 +165,13 @@ The system configures a maximum retry limit (default: 3) to prevent infinite loo
 
 1. Claim Extraction — Decomposes the generated answer into atomic factual claims using NLP parsing
 2. Grounding Verification — Each claim is checked against retrieved context chunks for evidentiary support
-3. Classification — Claims are classified as:
-   • Verified — Directly supported by context
-   • Unsupported — Neither confirmed nor denied
-   • Contradicted — Directly contradicted by context
+3. Classification — Claims are classified into 4 granular categories:
+   • Supported — Directly supported by context (weight: 1.0)
+   • Partially Supported — Substantially supported with minor details unverified (weight: 0.5)
+   • Unsupported — Neither confirmed nor denied (weight: 0.0)
+   • Contradicted — Directly contradicted by context (triggers aggressive rewrite)
 
-4. Confidence Scoring — Aggregate score calculated as the proportion of verified claims, weighted by semantic similarity
+4. Confidence Scoring — Aggregate grounding score calculated from claim verdict weights clamped to [0.0, 1.0]
 5. Report — Detailed breakdown of each claim's verification status is included in the response
 
 This approach eliminates AI hallucinations by grounding every output in retrievable evidence.`,
@@ -215,7 +216,7 @@ Required:
 Optional:
 • NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD — Graph DB credentials
 • REDIS_URL — Caching backend
-• MAX_RETRIES — Self-healing retry limit (default: 3)
+• MAX_RETRIES — Self-healing retry limit (default: 1 in production per state.py:188 and config.py:181, configurable up to 3)
 • CONFIDENCE_THRESHOLD — Minimum verification threshold (default: 0.7)
 • LOG_LEVEL — Logging verbosity (default: INFO)`,
   },

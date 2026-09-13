@@ -171,6 +171,9 @@ class CriticAgent:
                 score = max(0.0, min(1.0, score))
                 hallu = bool(data.get("is_hallucinated", score < settings.GROUNDING_THRESHOLD))
                 reasoning = str(data.get("reasoning", "Fast-path single-pass verification completed."))
+                # Simple queries (complexity < 0.3) use single-pass verification to maintain <1.5s p95 latency;
+                # trades 4-verdict granularity (loses PARTIALLY vs CONTRADICTED distinction) for speed.
+                # Hallucination routes to targeted_healing by default.
                 mode = "targeted_healing" if hallu else "none"
 
                 span.set_attribute("grounding_score", score)

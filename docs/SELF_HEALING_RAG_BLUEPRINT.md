@@ -546,7 +546,7 @@ FULL_HEAL_THRESHOLD = 0.30
 
 **Tasks:**
 
-1. Integrate RAGAS metrics: faithfulness, answer relevance, context precision, context recall
+1. Integrate RAGAS metrics: faithfulness, answer relevance, context precision (context recall & citation accuracy in AES/offline experiments only)
 2. `EvaluationAgent` node: runs after critic passes quality gate
 3. Evaluation dataset builder: curated QA pairs with ground-truth answers
 4. Regression pipeline: run new model/prompt changes against baseline dataset
@@ -556,11 +556,11 @@ FULL_HEAL_THRESHOLD = 0.30
 
 ```python
 class EvaluationResult:
-    faithfulness: float          # % of answer supported by context
-    answer_relevance: float      # Answer addresses the question
-    context_precision: float     # Retrieved context relevant to answer
-    context_recall: float        # All relevant info retrieved
-    citation_accuracy: float     # Citations point to correct sources
+    faithfulness: float          # % of answer supported by context (Production)
+    answer_relevance: float      # Answer addresses the question (Production)
+    context_precision: float     # Retrieved context relevant to answer (Production)
+    context_recall: float        # All relevant info retrieved (Offline/AES only)
+    citation_accuracy: float     # Citations point to correct sources (Future/AES)
     overall_score: float         # Weighted composite
     eval_model: str              # Which model performed evaluation
     latency_ms: int
@@ -1272,7 +1272,7 @@ FAILURE_TO_STRATEGY = {
 
 ```python
 class RetryController:
-    HARD_LIMIT = 3
+    HARD_LIMIT = 3  # Blueprint design ceiling; production defaults to 1 (config.py:181, state.py:188)
     
     def decide(self, state: RAGState) -> RetryDecision:
         # Hard limit

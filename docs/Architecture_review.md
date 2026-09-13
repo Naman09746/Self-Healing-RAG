@@ -482,7 +482,7 @@ The current healing system is:
 1. Critic returns `is_hallucinated=True`
 2. `healing_node` rewrites the query
 3. Retrieve again
-4. Repeat up to `max_retries=3`
+4. Repeat up to `max_retries=1` (design ceiling 3, production default 1 per `config.py:181`)
 
 This is **reactive retrieval retry**, not self-healing. True self-healing requires:
 - Failure diagnosis (WHY did it fail?)

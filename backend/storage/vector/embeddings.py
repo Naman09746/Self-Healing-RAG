@@ -55,6 +55,14 @@ def _openai_embed(texts: list[str], model: str, api_key: str, base_url: str | No
     embed_model = model or "text-embedding-3-small"
     if any(tag in embed_model.lower() for tag in ("nomic", "ollama", "llama", "bge", "all-minilm")):
         embed_model = "text-embedding-3-small"
+        
+    # OpenRouter requires explicit provider prefixes
+    if base_url and "openrouter.ai" in base_url.lower():
+        if embed_model == "text-embedding-3-small":
+            embed_model = "openai/text-embedding-3-small"
+        elif embed_model == "text-embedding-3-large":
+            embed_model = "openai/text-embedding-3-large"
+
     resp = client.embeddings.create(model=embed_model, input=texts)
     return [list(d.embedding) for d in resp.data]
 

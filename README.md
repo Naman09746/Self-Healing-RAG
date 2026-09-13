@@ -110,7 +110,7 @@ Our ongoing performance engineering roadmap aims to systematically reduce end-to
 | **🎯 4-Way Critic Routing** | FULLY_SUPPORTED → output, PARTIALLY → heal, UNSUPPORTED → expand, CONTRADICTED → rewrite | ✅ Production |
 | **🔐 Enterprise Security** | RS256 JWT, RBAC (4 roles), rate limiting, prompt injection detection | ✅ Production |
 | **📝 Audit Logging** | Every mutating operation logged with rotation (100 MB, 10 backups) | ✅ Production |
-| **📈 RAGAS Evaluation** | Offline evaluation with faithfulness, answer relevancy, precision, recall | ✅ Production |
+| **📈 RAGAS Evaluation** | Offline evaluation with faithfulness, answer relevancy, and context precision | ✅ Production |
 | **📡 OpenTelemetry** | Distributed traces via OTLP with LangSmith integration | ✅ Production |
 | **📊 Prometheus Metrics** | 25+ application metrics with pre-configured Grafana dashboards | ✅ Production |
 | **🐳 Production K8s** | HPA, PDB, network policies, pod security context, rolling updates | ✅ Production |

@@ -68,11 +68,13 @@ To ensure reproducibility and transparent progression, both the **v1 (Baseline/T
 | :--- | :--- | :--- | :--- | :--- |
 | **Answer Relevancy** | 0.76 | **0.92** | 📈 **+21.1%** | RAGAS synthetic question cosine similarity |
 | **Context Precision** | 0.64 | **0.85** | 📈 **+32.8%** | Mean Average Precision of relevant chunks at top $K$ |
-| **Context Recall** | 0.68 | **0.88** | 📈 **+29.4%** | % of ground truth claims retrieved in context |
+| **Context Recall**\* | 0.68 | **0.88** | 📈 **+29.4%** | % of ground truth claims retrieved in context (offline benchmark) |
 | **Grounding Score** | 0.58 | **0.83** | 📈 **+43.1%** | Critic agent atomic claim verification |
 | **Hallucination Rate** | 28.0% | **4.2%** | 📉 **-85.0%** | Unverified / contradicted claims in final response |
-| **Healing Recovery Rate**| 0.0% (Fails silently)| **82.0%** | 🛡️ **Autonomous**| % of failing queries recovered on Pass 2 |
+| **Healing Recovery Rate**\*| 0.0% (Fails silently)| **82.0%** | 🛡️ **Autonomous**| % of failing queries recovered on Pass 2 (offline gold set) |
 | **p95 Latency** | 1.10s | **1.45s** | ⚡ **+350ms** | Groq LPU inference keeps 2-pass cycle under 1.5s |
+
+*\*Note: Context Recall and Healing Recovery Rate are measured offline on our 50-query gold-standard evaluation dataset; the online production pipeline evaluates live queries via Grounding Score (`faithfulness`, `answer_relevancy`, and `context_precision`).*
 
 ---
 
@@ -105,7 +107,7 @@ To ensure reproducibility and transparent progression, both the **v1 (Baseline/T
 
 ### Q3: What is Context Precision (0.85)?
 **Answer:**
-> "**Context Precision measures the signal-to-noise ratio of our retrieval pipeline and the ranking quality of retrieved chunks.** Specifically, it evaluates whether the most relevant chunks are placed at the top of the context window rather than being buried under irrelevant noise.
+> "**Context Precision measures the signal-to-noise ratio of our retrieval pipeline and the ranking quality of retrieved chunks.** Specifically, it evaluates whether the most relevant chunks are placed at the top of the context window rather than being buried under irrelevant noise *(measured offline via RAGAS MAP@K, not an online second-retrieval similarity delta per GPT.md:43)*.
 >
 > **The Formula (Mean Average Precision @ K):**
 > $$\text{Context Precision@K} = \frac{\sum_{k=1}^{K} (\text{Precision@}k \times v_k)}{\text{Total Relevant Chunks in top } K}$$
@@ -126,7 +128,7 @@ To ensure reproducibility and transparent progression, both the **v1 (Baseline/T
 > **Difference between Precision & Recall in RAG:**
 > - **Context Precision** is about *noise & ranking* (are top chunks relevant?).
 > - **Context Recall** is about *coverage* (did we miss any required fact?).
-> In our pipeline, Context Recall reached **0.88** because the Healer's query expansion casts a targeted wider net when initial recall is low."
+> In our offline benchmark on the 50-query dataset, Context Recall reached **0.88** because the Healer's query expansion casts a targeted wider net when initial retrieval misses key facts. Online, the healer routes based on claim verdict distribution (`dominant_healing_mode` in `verdict.py`, e.g. `UNSUPPORTED` majority triggering retrieval expansion), rather than attempting to calculate recall without ground truth."
 
 ---
 
@@ -213,13 +215,13 @@ To ensure reproducibility and transparent progression, both the **v1 (Baseline/T
 **Answer:**
 > "**The Healing Success Rate measures our pipeline's ability to autonomously recover from initial generation failures before returning a response to the user.**
 >
-> **The Exact Formula:**
+> **The Exact Formula (Offline Evaluation Benchmark):**
 > $$\text{Healing Success Rate} = \frac{N_{\text{recovered}}}{N_{\text{failed\_initial}}} \times 100$$
 > - $N_{\text{failed\_initial}}$: Queries that failed the initial Critic check ($\text{grounding score} < 0.70$, or verdict containing `UNSUPPORTED`/`CONTRADICTED`).
 > - $N_{\text{recovered}}$: Queries where the Healer rewrote the query, executed a second retrieval pass, regenerated the answer, and achieved $\text{grounding score} \ge 0.85$ on Pass 2.
 >
 > **The Real Numbers:**
-> In our benchmark run, out of all queries triggering initial Critic rejection, **82% achieved full grounded recovery on Pass 2**. The remaining 18% were caught by our **Circuit Breaker** (`retry_count >= 1`) and routed to a graceful knowledge-absence fallback rather than serving a hallucination."
+> In our offline 50-query gold-standard benchmark run, out of all queries triggering initial Critic rejection, **82% achieved full grounded recovery on Pass 2**. The remaining 18% were caught by our **Circuit Breaker** (`retry_count >= 1`) and routed to a graceful knowledge-absence fallback rather than serving a hallucination."
 
 ---
 

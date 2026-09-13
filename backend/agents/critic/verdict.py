@@ -56,9 +56,11 @@ def aggregate_grounding_score(verdicts: List[ClaimVerdict]) -> float:
     """Aggregate per-claim verdicts into a 0.0–1.0 grounding score.
 
     SUPPORTED → 1.0, PARTIALLY_SUPPORTED → 0.5,
-    UNSUPPORTED → 0.0, CONTRADICTED → -0.5 (clamped to 0).
+    UNSUPPORTED → 0.0, CONTRADICTED → -0.5 (clamped to 0.0).
 
-    Final score = (sum of weights) / total_claims, clamped to [0.0, 1.0].
+    Note: CONTRADICTED is clamped to 0.0 in the numeric average to bound the score
+    in [0.0, 1.0], but its severe penalty is enforced via `is_hallucinated()` (verdict.py:73),
+    which immediately flags the response as hallucinated and routes to `aggressive_rewrite`.
     """
     if not verdicts:
         return 0.0
