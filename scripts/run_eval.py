@@ -76,7 +76,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--api-key",
         type=str,
         default=None,
-        help="OpenAI API key for RAGAS LLM-based metrics.",
+        help="OpenAI API key for RAGAS LLM-based metrics (or OpenRouter key).",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Evaluation LLM model (e.g. nvidia/nemotron-3-ultra-550b:free for OpenRouter, gpt-4o-mini for OpenAI). Default: settings.EVALUATION_LLM or MODEL_NAME.",
+    )
+    parser.add_argument(
+        "--base-url",
+        type=str,
+        default=None,
+        help="Base URL for OpenAI-compatible API (e.g. https://openrouter.ai/api/v1). Default: settings.EVALUATION_BASE_URL or OPENAI_BASE_URL.",
+    )
+    parser.add_argument(
+        "--embedding-model",
+        type=str,
+        default=None,
+        help="Embedding model for RAGAS (default: settings value).",
+    )
+    parser.add_argument(
+        "--heuristic",
+        action="store_true",
+        help="Force FastRegressionEvaluator (token-overlap heuristic, zero API cost).",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Run against live RAG pipeline (default: ground truth calibration adapter).",
     )
 
     parser.add_argument(
@@ -106,6 +134,8 @@ async def _run(
     queue_mode: bool,
     llm_config: Optional[dict],
     output_dir: str,
+    force_heuristic: bool = False,
+    live: bool = False,
 ) -> int:
     """Execute the evaluation and return a process exit code."""
 
@@ -135,26 +165,43 @@ async def _run(
             await eval_queue.close()
 
     # ------------------------------------------------------------------
-    # Inline / synchronous mode
+    # Inline / synchronous mode — choose pipeline adapter
     # ------------------------------------------------------------------
+    if live:
+        from backend.evaluation.runner import LiveRAGPipelineAdapter
+
+        pipeline = LiveRAGPipelineAdapter()
+    else:
+        pipeline = None  # EvaluationRunner defaults to GroundTruth
+
     runner = EvaluationRunner(
         dataset_path=dataset_path,
         llm_config=llm_config,
+        pipeline=pipeline,
     )
 
-    logger.info("Starting evaluation (dataset=%s, limit=%s) …", dataset_path, limit)
-    report = await runner.run(limit=limit)
+    logger.info(
+        "Starting evaluation (dataset=%s, limit=%s, heuristic=%s, live=%s, llm_config=%s) …",
+        dataset_path,
+        limit,
+        force_heuristic,
+        live,
+        {k: (v[:12] + "..." if k == "api_key" and v else v) for k, v in (llm_config or {}).items()},
+    )
+    report = await runner.run(limit=limit, force_heuristic=force_heuristic)
 
     scores = report.scores
     print("=" * 60)
     print(f"  Run ID:         {report.run_id}")
     print(f"  Samples:        {report.num_queries}")
+    print(f"  Model:          {report.model or llm_config.get('model', '') if llm_config else report.model or 'heuristic/default'}")
     print(f"  Duration:       {scores.duration_seconds:.2f}s")
     print(f"  Error:          {scores.error or 'none'}")
     print("-" * 60)
     print(f"  Faithfulness:     {scores.faithfulness:.4f}")
     print(f"  Answer Relevancy: {scores.answer_relevancy:.4f}")
     print(f"  Context Precision:{scores.context_precision:.4f}")
+    print(f"  Context Recall:   {scores.context_recall:.4f}")
     print("=" * 60)
 
     if scores.error:
@@ -181,8 +228,27 @@ def main() -> int:
         return 1
 
     llm_config: Optional[dict] = None
-    if args.api_key:
-        llm_config = {"api_key": args.api_key}
+    if args.api_key or args.model or args.base_url or args.embedding_model:
+        llm_config = {}
+        if args.api_key:
+            llm_config["api_key"] = args.api_key
+        if args.model:
+            llm_config["model"] = args.model
+        if args.base_url:
+            llm_config["base_url"] = args.base_url
+        if args.embedding_model:
+            llm_config["embedding_model"] = args.embedding_model
+        # Also pull from env if not provided via CLI
+        if not llm_config.get("model"):
+            try:
+                from backend.core.config import settings
+
+                if getattr(settings, "EVALUATION_LLM", ""):
+                    llm_config["model"] = settings.EVALUATION_LLM  # type: ignore[assignment]
+                if getattr(settings, "EVALUATION_BASE_URL", "") and "base_url" not in llm_config:
+                    llm_config["base_url"] = settings.EVALUATION_BASE_URL  # type: ignore[assignment]
+            except Exception:
+                pass
 
     return asyncio.run(
         _run(
@@ -191,6 +257,8 @@ def main() -> int:
             queue_mode=args.queue,
             llm_config=llm_config,
             output_dir=args.output_dir,
+            force_heuristic=args.heuristic,
+            live=args.live,
         )
     )
 

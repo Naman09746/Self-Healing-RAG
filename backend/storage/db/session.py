@@ -4,6 +4,28 @@ from sqlalchemy.pool import NullPool
 from backend.core.config import settings
 from backend.core.logging import get_logger
 
+# Neon DNS workaround for local resolver intermittently failing on
+# ep-cold-hill-b35d4g9r.c-4.ap-southeast-1.aws.neon.tech (see diagnostics).
+import socket as _socket
+
+_orig_getaddrinfo = _socket.getaddrinfo
+_NEON_IPS = ["52.76.246.190", "52.76.212.156", "3.0.27.201"]
+
+
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    try:
+        return _orig_getaddrinfo(host, port, family, type, proto, flags)
+    except _socket.gaierror as e:
+        if host and "neon.tech" in host:
+            return [(_socket.AF_INET, _socket.SOCK_STREAM, 6, "", (ip, port)) for ip in _NEON_IPS[:1]]
+        raise
+
+
+try:
+    _socket.getaddrinfo = _patched_getaddrinfo
+except Exception:
+    pass
+
 logger = get_logger(__name__)
 
 # NullPool is used for asyncpg with FastAPI/Starlette to prevent

@@ -221,8 +221,10 @@ class TestShouldGenerate:
         state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
         assert should_generate(state) == "generation"
 
-    def test_rrf_fallback_sparse_relevant(self):
-        # Sparse-only (distance=None) with RRF scores above 0.008 should be relevant
+    def test_rrf_fallback_sparse_relevant(self, monkeypatch):
+        # Sparse-only with RRF scores above RRF_THRESHOLD (0.008) should be relevant — NoOp path
+        monkeypatch.setattr("backend.graph.edges.settings.RERANKER_PROVIDER", "none")
+        monkeypatch.setattr("backend.graph.nodes.settings.RERANKER_PROVIDER", "none")
         chunks = [
             RetrievedChunk(chunk_id="1", content="sparse 1", score=0.012, source="doc1", distance=None),
             RetrievedChunk(chunk_id="2", content="sparse 2", score=0.015, source="doc2", distance=None),
@@ -230,13 +232,80 @@ class TestShouldGenerate:
         state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
         assert should_generate(state) == "generation"
 
-    def test_rrf_fallback_all_below_routes_to_output(self):
+    def test_rrf_fallback_all_below_routes_to_output(self, monkeypatch):
+        monkeypatch.setattr("backend.graph.edges.settings.RERANKER_PROVIDER", "none")
+        monkeypatch.setattr("backend.graph.nodes.settings.RERANKER_PROVIDER", "none")
         chunks = [
             RetrievedChunk(chunk_id="1", content="sparse low", score=0.005, source="doc1", distance=None),
             RetrievedChunk(chunk_id="2", content="sparse low2", score=0.003, source="doc2", distance=None),
         ]
         state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
-        # With new logic, all-below but corpus non-empty fallback treats as relevant to avoid false fast-fail;
-        # however if we explicitly want sparse low to fast-fail, we rely on no_relevant_chunks flag.
-        # Here we test that sparse low still routes to generation via fallback len>0 path (prevents P0 bug).
+        # NoOp fallback: any RRF non-empty → generation to avoid P0 false fast-fail on small corpora
         assert should_generate(state) == "generation"
+
+    def test_cross_encoder_below_threshold_routes_to_output(self, monkeypatch):
+        # Cross-encoder path: RRF scores 0.012 are < RERANKER_THRESHOLD 0.5 → should fast-fail
+        monkeypatch.setattr("backend.graph.edges.settings.RERANKER_PROVIDER", "cross-encoder")
+        monkeypatch.setattr("backend.graph.edges.settings.RERANKER_THRESHOLD", 0.5)
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="sparse 1", score=0.012, source="doc1", distance=None),
+            RetrievedChunk(chunk_id="2", content="sparse 2", score=0.015, source="doc2", distance=None),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        assert should_generate(state) == "output"
+
+    def test_cross_encoder_above_threshold_routes_to_generation(self, monkeypatch):
+        monkeypatch.setattr("backend.graph.edges.settings.RERANKER_PROVIDER", "cross-encoder")
+        monkeypatch.setattr("backend.graph.edges.settings.RERANKER_THRESHOLD", 0.5)
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="reranked high", score=2.5, source="doc1", distance=None),
+            RetrievedChunk(chunk_id="2", content="reranked low", score=0.1, source="doc2", distance=None),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        assert should_generate(state) == "generation"
+
+    def test_vector_distance_threshold(self, monkeypatch):
+        # Vector distance 0.60 < VECTOR_DISTANCE_THRESHOLD 0.65 → relevant
+        monkeypatch.setattr("backend.graph.edges.settings.VECTOR_DISTANCE_THRESHOLD", 0.65)
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="good distance", score=0.6, source="doc1", distance=0.60),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        assert should_generate(state) == "generation"
+
+    def test_vector_distance_above_threshold(self, monkeypatch):
+        monkeypatch.setattr("backend.graph.edges.settings.VECTOR_DISTANCE_THRESHOLD", 0.65)
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="bad distance", score=0.9, source="doc1", distance=0.85),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        assert should_generate(state) == "output"
+
+    def test_sparse_only_below_rrf_threshold(self, monkeypatch):
+        monkeypatch.setattr("backend.graph.edges.settings.RERANKER_PROVIDER", "none")
+        monkeypatch.setattr("backend.graph.edges.settings.RRF_THRESHOLD", 0.008)
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="low RRF", score=0.001, source="doc1", distance=None),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        # NoOp still returns generation via fallback len>0 (threshold advisory for RRF)
+        assert should_generate(state) == "generation"
+
+    def test_dense_only_no_sparse(self, monkeypatch):
+        monkeypatch.setattr("backend.graph.edges.settings.VECTOR_DISTANCE_THRESHOLD", 0.65)
+        chunks = [
+            RetrievedChunk(chunk_id="1", content="dense only good", score=0.9, source="doc1", distance=0.30),
+        ]
+        state = _state(retrieved_chunks=chunks, no_relevant_chunks=False)
+        assert should_generate(state) == "generation"
+
+    def test_no_results(self):
+        state = _state(retrieved_chunks=[], no_relevant_chunks=False)
+        assert should_generate(state) == "output"
+
+    def test_unsupported_ood_via_no_relevant_flag(self):
+        # OOD where retriever found candidates but none passed distance/RRF → flag set
+        state = _state(retrieved_chunks=[
+            RetrievedChunk(chunk_id="1", content="irrelevant", score=0.9, source="doc1", distance=0.90),
+        ], no_relevant_chunks=True)
+        assert should_generate(state) == "output"

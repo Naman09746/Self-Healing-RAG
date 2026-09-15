@@ -7,6 +7,8 @@ Accepts a healing_target parameter that tailors the rewrite strategy:
   - "" (empty)             → standard rewrite (legacy / binary mode)
 """
 
+from typing import List, Optional
+from backend.core.config import settings
 from backend.core.logging import get_logger
 from backend.agents.generation.llm_client import LLMClient
 
@@ -66,7 +68,7 @@ REWRITTEN QUERY:"""
 
 class QueryRewriter:
     def __init__(self, model: str | None = None) -> None:
-        self.client = LLMClient(model=model)
+        self.client = LLMClient(model=model or settings.SMALL_MODEL_NAME)
 
     async def rewrite_query(
         self,
@@ -109,3 +111,52 @@ class QueryRewriter:
         except Exception as e:
             logger.error("Query rewriting failed", error=str(e))
             return original_query  # Fallback to original
+
+    async def expand_query(
+        self,
+        original_query: str,
+        error_context: str = "",
+        healing_target: str = "",
+        max_variants: int = 2,
+    ) -> List[str]:
+        """Generate multiple query variants tailored to the healing target.
+
+        Returns a list of search queries starting with the primary rewrite or
+        original query, followed by alternative phrasings/expansions.
+        """
+        prompt = (
+            f"You are an expert search engineer. The previous query failed to retrieve "
+            f"adequate documents for the user's question.\n\n"
+            f"ORIGINAL QUERY: {original_query}\n"
+            f"FAILURE CONTEXT: {error_context}\n"
+            f"HEALING STRATEGY: {healing_target or 'broad_expansion'}\n\n"
+            f"Generate {max_variants} distinct search queries that explore different synonyms, "
+            f"perspectives, or sub-aspects to retrieve relevant evidence.\n"
+            f"Provide ONLY the search queries, one per line. No numbers, bullets, or explanations."
+        )
+
+        logger.info(
+            "Expanding query into multiple variants",
+            healing_target=healing_target or "legacy",
+            max_variants=max_variants,
+        )
+
+        try:
+            raw = await self.client.generate(prompt)
+            lines = [line.strip().lstrip("0123456789.-* ") for line in raw.split("\n")]
+            variants = [l for l in lines if l]
+
+            results: List[str] = []
+            for v in variants:
+                if v and v not in results:
+                    results.append(v)
+
+            if not results:
+                results = [original_query]
+            elif original_query not in results:
+                results.append(original_query)
+
+            return results[:max_variants + 1]
+        except Exception as e:
+            logger.error("Query expansion failed", error=str(e))
+            return [original_query]

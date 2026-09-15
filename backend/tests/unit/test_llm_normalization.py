@@ -29,6 +29,8 @@ def test_openai_model_normalization():
 def test_openrouter_model_normalization():
     assert _normalize_model_name("llama3.2:1b", provider="openrouter") == "nvidia/nemotron-3.5-lightning:free"
     assert _normalize_model_name("llama3.2:1b", api_key="sk-or-test123") == "nvidia/nemotron-3.5-lightning:free"
+    assert _normalize_model_name("nvidia/nemotron-3-ultra-550b:free", provider="openrouter") == "nvidia/nemotron-3-ultra-550b:free"
+    assert _normalize_model_name("google/gemma-4-31b:free", provider="openrouter") == "google/gemma-4-31b:free"
 
 
 def test_ollama_local_preservation():

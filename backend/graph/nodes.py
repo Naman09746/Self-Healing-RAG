@@ -91,15 +91,30 @@ def create_planning_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]
         strategy = "DIRECT" if target_k <= 3 else "HYBRID"
         plan = {"is_complex": complexity_score > 0.3, "strategy": strategy, "reasoning": f"Adaptive: score={complexity_score:.2f}, k={target_k}"}
 
-        # If the query is complex enough, also invoke the planner for deeper analysis
-        if complexity_score > 0.7 and hasattr(deps, "planner") and deps.planner:
+        # Multi-query expansion: invoke planner for deep analysis when complex or when multi-query enabled for medium/complex queries
+        expanded_queries = [state.query]
+        should_plan = (
+            complexity_score > 0.7
+            or (settings.MULTI_QUERY_ENABLED and complexity_score > 0.3)
+        )
+        if should_plan and hasattr(deps, "planner") and deps.planner:
             deep_plan = await deps.planner.create_plan(state.query)
             plan["sub_queries"] = deep_plan.get("sub_queries", [])
+
+        if settings.MULTI_QUERY_ENABLED and complexity_score > 0.3:
+            sub_qs = [
+                sq.strip()
+                for sq in plan.get("sub_queries", [])
+                if sq and sq.strip() and sq.strip().lower() != state.query.strip().lower()
+            ]
+            max_vars = getattr(settings, "MULTI_QUERY_MAX_VARIANTS", 3)
+            expanded_queries = [state.query] + sub_qs[: max_vars - 1]
 
         return {
             "planner_plan": plan,
             "complexity_score": complexity_score,
             "target_k": target_k,
+            "expanded_queries": expanded_queries,
             "current_phase": "planning",
         }
 
@@ -115,13 +130,23 @@ def create_retrieval_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]
         logger.info("Node: Retrieval", query=query, target_k=k, rerank_top_k=rerank_top_k)
 
         tid = resolve_tenant_id(state.tenant_id)
-        fused_results = await deps.hybrid_retriever.retrieve(
-            query,
-            k=k,
-            tenant_id=tid,
-            user_uuid=tid,
-            session_id=state.session_id,
-        )
+        if settings.MULTI_QUERY_ENABLED and len(state.expanded_queries) > 1 and hasattr(deps.hybrid_retriever, "retrieve_many"):
+            max_vars = getattr(settings, "MULTI_QUERY_MAX_VARIANTS", 3)
+            fused_results = await deps.hybrid_retriever.retrieve_many(
+                state.expanded_queries[:max_vars],
+                k=k,
+                tenant_id=tid,
+                user_uuid=tid,
+                session_id=state.session_id,
+            )
+        else:
+            fused_results = await deps.hybrid_retriever.retrieve(
+                query,
+                k=k,
+                tenant_id=tid,
+                user_uuid=tid,
+                session_id=state.session_id,
+            )
 
         reranked_results = await deps.reranker.rerank(query, fused_results, top_k=rerank_top_k)
 
@@ -142,40 +167,47 @@ def create_retrieval_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]
                 )
             )
 
-        # Check for knowledge absence (Phase 1A fast-fail) — distance-aware
-        # RRF scores are ~0.016, so threshold 0.5 never matches; use cosine distance when available.
-        # For pgvector: distance = 1 - cosine_similarity, 0=identical, 2=opposite.
-        # RELEVANCE_THRESHOLD is cosine similarity, so convert to distance threshold.
+        # Check for knowledge absence — calibrated separate score spaces (Phase 3)
+        # Vector: cosine distance 0=identical 2=opposite, lower better
+        # Reranker: cross-encoder logits -5..10, higher better
+        # RRF: 1/(k+rank+1) ~0.016, higher better
+        # Sparse ts_rank 0..1, higher better
         if len(chunks) == 0:
             has_relevant = False
         else:
-            # If any chunk has a vector distance, use that for relevance
-            dist_threshold = 1.0 - float(settings.RELEVANCE_THRESHOLD)  # e.g. 0.5 -> 0.5 distance
-            # Clamp to sensible bounds: at least 0.65 to avoid over-filtering moderate matches,
-            # at most 0.85 to avoid accepting pure noise
-            dist_threshold = max(0.65, min(dist_threshold, 0.85))
+            vector_thresh = float(
+                getattr(settings, "VECTOR_DISTANCE_THRESHOLD", 0.65)
+                if getattr(settings, "VECTOR_DISTANCE_THRESHOLD", None) is not None
+                else max(0.65, min(1.0 - float(settings.RELEVANCE_THRESHOLD), 0.85))
+            )
+            rrf_thresh = float(getattr(settings, "RRF_THRESHOLD", 0.008))
+            reranker_thresh = float(
+                getattr(settings, "RERANKER_THRESHOLD", 0.5)
+                if getattr(settings, "RERANKER_THRESHOLD", None) is not None
+                else float(settings.RELEVANCE_THRESHOLD)
+            )
             has_relevant = False
-            # Determine score threshold for non-vector results
             rerank_provider = getattr(settings, "RERANKER_PROVIDER", "none") or "none"
             is_cross_encoder = rerank_provider.lower() not in ("none", "", "noop")
-            score_thresh = float(settings.RELEVANCE_THRESHOLD) if is_cross_encoder else 0.008
             for c in chunks:
                 if c.distance is not None:
                     try:
-                        if float(c.distance) <= dist_threshold:
+                        if float(c.distance) <= vector_thresh:
                             has_relevant = True
                             break
                     except Exception:
                         pass
                 else:
-                    if c.score >= score_thresh:
+                    # No distance: sparse-only or RRF fallback
+                    thresh = reranker_thresh if is_cross_encoder else rrf_thresh
+                    if c.score >= thresh:
                         has_relevant = True
                         break
-            # Edge: if no distance and all RRF but corpus non-empty, treat as relevant if we have any chunk
-            # (prevents false fast-fail on small corpora with NoOp reranker)
+            # Fallback for NoOp RRF: any non-empty fused result implies lexical overlap
+            # (BM25 returns [] when no match), prevents P0 false fast-fail on small corpora
             if not has_relevant and all(c.distance is None for c in chunks):
-                # At least one fused result exists — consider relevant
-                has_relevant = len(chunks) > 0
+                if not is_cross_encoder:
+                    has_relevant = len(chunks) > 0
         no_relevant = (len(chunks) == 0) or (not has_relevant)
 
         result: Dict[str, Any] = {
@@ -311,14 +343,24 @@ def create_healing_node(deps) -> Callable[[RAGState], Awaitable[Dict[str, Any]]]
         )
 
         error_context = "\n".join(state.error_log)
-        rewritten = await deps.rewriter.rewrite_query(
-            state.query,
-            error_context,
-            healing_target=state.healing_target,
-        )
+        if settings.MULTI_QUERY_ENABLED and hasattr(deps, "rewriter") and hasattr(deps.rewriter, "expand_query"):
+            expanded_queries = await deps.rewriter.expand_query(
+                state.query,
+                error_context,
+                healing_target=state.healing_target,
+            )
+            rewritten = expanded_queries[0] if expanded_queries else state.query
+        else:
+            rewritten = await deps.rewriter.rewrite_query(
+                state.query,
+                error_context,
+                healing_target=state.healing_target,
+            )
+            expanded_queries = [rewritten]
 
         return {
             "rewritten_query": rewritten,
+            "expanded_queries": expanded_queries,
             "retry_count": state.retry_count + 1,
             "current_phase": "healing",
             "retrieved_chunks": [],

@@ -85,7 +85,7 @@ def _normalize_model_name(model: str, base_url: str = "", api_key: str = "", pro
         return model
 
     elif is_openrouter:
-        if not model or ":" in model:
+        if not model or "/" not in model:
             return "nvidia/nemotron-3.5-lightning:free"
         return model
 

@@ -58,6 +58,25 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SMALL_MODEL_NAME", "LLM_SMALL_MODEL"),
     )
     EMBEDDING_MODEL: str = Field(default="nomic-embed-text")
+    EMBEDDING_PROVIDER: str = Field(
+        default="auto",
+        description="Embedding provider: 'auto' (detect from EMBEDDING_MODEL), 'ollama', 'openai' (OpenAI/Groq/OpenRouter), 'hf'/'sentence_transformers' (local HF Qwen/BGE/Jina/GTE). "
+                    "Set 'hf' for Qwen3-Embedding/BGE-M3 local inference, 'ollama' for qwen3-embedding:0.6b via Ollama, 'openai' for API.",
+    )
+    EMBEDDING_DEVICE: str = Field(
+        default="auto",
+        description="Device for HF embeddings: 'auto' (cuda>mps>cpu), 'cpu', 'cuda', 'mps'. Ignored for Ollama/OpenAI.",
+    )
+    EMBEDDING_BATCH_SIZE: int = Field(default=32, description="Batch size for HF embeddings (chunks per encode call). 32 optimal for CPU, 64+ for GPU.")
+    EMBEDDING_NORMALIZE: bool = Field(default=True, description="L2-normalize HF embeddings for cosine search (pgvector vector_cosine_ops). Must be true for pgvector.")
+    EMBEDDING_TRUST_REMOTE_CODE: bool = Field(default=False, description="Allow HF remote code (required for some Qwen models that ship custom code).")
+    EMBEDDING_QUERY_PREFIX: str = Field(
+        default="",
+        description="Optional instruction prefix prepended to queries for HF models. "
+                    "Qwen3 example: 'Instruct: Given a web search query, retrieve relevant passages that answer the query\\nQuery: '. "
+                    "BGE-M3: 'Represent this sentence for searching relevant passages: '. Leave empty for default.",
+    )
+    EMBEDDING_PASSAGE_PREFIX: str = Field(default="", description="Optional prefix for passages/documents (rarely needed, HF only).")
     EMBEDDING_FALLBACK_ENABLED: bool = Field(
         default=False,
         description="Enable deterministic hash embedding fallback if provider fails. Must be False in production to prevent DB poisoning.",
@@ -76,6 +95,18 @@ class Settings(BaseSettings):
     PGVECTOR_EF_SEARCH: int = Field(
         default=40,
         description="HNSW ef_search parameter for pgvector queries (higher = more recall, slower).",
+    )
+    PGVECTOR_USE_HALFVEC: bool = Field(
+        default=False,
+        description="Use halfvec(half precision) instead of vector for 50% storage reduction and ~3x cosine speedup. Requires pgvector >=0.7 and Postgres 15+. Enable for 10k+ rows free-tier optimization. When enabled, embedding column type is halfvec(dim).",
+    )
+    PGVECTOR_FILTERED_INDEX_TENANT: str | None = Field(
+        default=None,
+        description="If set (e.g. 'default'), creates a filtered HNSW index WHERE tenant_id = 'value' for 10k+ rows per-tenant optimization. Otherwise uses generic HNSW. For multi-tenant with many tenants, leave None and use enable_seqscan tuning.",
+    )
+    PGVECTOR_ENABLE_SEQSCAN_OFF: bool = Field(
+        default=False,
+        description="If True, sets LOCAL enable_seqscan = off before vector queries to force HNSW index usage even with WHERE tenant_id filter. Useful for 10k+ rows where planner incorrectly chooses seq scan + sort. Default False because seq scan is faster for <1k rows.",
     )
     QDRANT_URL: str = Field(
         default="",
@@ -179,12 +210,41 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
     MAX_RETRIES: int = 1
-    RELEVANCE_THRESHOLD: float = 0.5
+    RELEVANCE_THRESHOLD: float = Field(
+        default=0.5,
+        description="Master relevance threshold (backward compat). Used for vector distance (1-threshold) and as fallback for reranker. Prefer explicit thresholds below.",
+    )
     GROUNDING_THRESHOLD: float = 0.5
     MAX_HISTORY_TURNS: int = 5
     RRF_DENSE_WEIGHT: float = 1.0
     RRF_SPARSE_WEIGHT: float = 1.0
     RRF_JACCARD_THRESHOLD: float = 0.85
+
+    # Phase 3: Explicit calibrated thresholds — separate score spaces
+    # Vector cosine distance: 0=identical, 1=orthogonal, 2=opposite. Lower is better.
+    VECTOR_DISTANCE_THRESHOLD: float = Field(
+        default=0.65,
+        description="Max distance for dense vector hits to be considered relevant. "
+                    "Default 0.65 = clamp(1-RELEVANCE_THRESHOLD, 0.65, 0.85). "
+                    "Relevant after re-ingest: 0.22-0.41, Irrelevant: 0.83+ (gap 0.41).",
+    )
+    # Cross-encoder reranker logits: unbounded approx -5..10, higher is better. Default 0.5 is conservative for ms-marco.
+    RERANKER_THRESHOLD: float = Field(
+        default=0.5,
+        description="Min rerank_score (cross-encoder) to be relevant. "
+                    "RRF scores 0.016 are NOT compared to this.",
+    )
+    # RRF fallback when reranker disabled: ranks fused, 0.016 rank0, 0.008 approx rank5+
+    RRF_THRESHOLD: float = Field(
+        default=0.008,
+        description="Min RRF score (1/(k+rank+1)) to be relevant when RERANKER_PROVIDER=none. "
+                    "Any non-empty RRF is considered lexical/semantic overlap; threshold is low.",
+    )
+    # Sparse ts_rank 0..1, typically 0.05-0.6; 0.01 is low fallback for ILIKE
+    SPARSE_SCORE_THRESHOLD: float = Field(
+        default=0.01,
+        description="Min ts_rank score for sparse hits when no vector distance available.",
+    )
 
     # Embedding Hardening (Phase 0.3) — fail-closed in prod
     EMBEDDING_STRICT_DIM: bool = Field(default=True, description="If True, raise on embedding dim mismatch instead of warning.")
@@ -208,6 +268,16 @@ class Settings(BaseSettings):
     ADAPTIVE_K_COMPLEX: int = Field(default=10, description="k for complex queries (score ≥ 0.7)")
     ADAPTIVE_RERANK_COMPLEX_TOP: int = Field(
         default=6, description="top_k for reranker when k=10 (avoid quality dilution)"
+    )
+
+    # Multi-Query Retrieval
+    MULTI_QUERY_ENABLED: bool = Field(
+        default=False,
+        description="Enable multi-query retrieval fan-out for complex queries.",
+    )
+    MULTI_QUERY_MAX_VARIANTS: int = Field(
+        default=3,
+        description="Maximum number of query variants to evaluate during multi-query retrieval.",
     )
 
     # Multi-Tenancy
@@ -310,6 +380,25 @@ class Settings(BaseSettings):
         description="LangSmith project name for run grouping."
     )
 
+    # Evaluation LLM (Phase 1 — separate from application LLM to support OpenRouter)
+    EVALUATION_LLM: str = Field(
+        default="",
+        description="LLM model for RAGAS evaluation (faithfulness, relevancy, precision, recall). "
+                    "If empty, falls back to MODEL_NAME, then 'gpt-4o-mini'. "
+                    "Use an OpenRouter model like 'nvidia/nemotron-3-ultra-550b:free' when LLM_PROVIDER=openrouter.",
+    )
+    EVALUATION_BASE_URL: str = Field(
+        default="",
+        description="Base URL for evaluation LLM (OpenAI-compatible). "
+                    "If empty, falls back to OPENAI_BASE_URL. "
+                    "Set to https://openrouter.ai/api/v1 for OpenRouter.",
+    )
+    EVALUATION_EMBEDDING_MODEL: str = Field(
+        default="",
+        description="Embedding model for RAGAS evaluation. "
+                    "If empty, falls back to EMBEDDING_MODEL.",
+    )
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_db_url(cls, v: Any) -> Any:
@@ -388,8 +477,26 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def auto_align_embedding_dim(self) -> "Settings":
-        """Auto-align VECTOR_STORE_DIM if OpenAI/OpenRouter embedding model is used."""
+        """Auto-align VECTOR_STORE_DIM for known embedding models (OpenAI, Qwen3, BGE-M3, Jina, GTE).
+
+        Without this, fresh installs with EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B but VECTOR_STORE_DIM=768
+        would create vector(768) table then fail on first ingest (dim mismatch 768 vs 1024).
+        """
         emb_model = (getattr(self, "EMBEDDING_MODEL", "") or "").lower()
+        # Import dim registry lazily to avoid circular
+        try:
+            from backend.storage.vector.embeddings import MODEL_DIM_REGISTRY, _resolve_model_dim
+
+            target = _resolve_model_dim(getattr(self, "EMBEDDING_MODEL", ""))
+            if target and self.VECTOR_STORE_DIM == 768 and target != 768:
+                # Only override default 768, never override explicit user dim
+                # Check that default wasn't intentionally set: nomic keeps 768
+                if "nomic" not in emb_model:
+                    self.VECTOR_STORE_DIM = target
+                    return self
+        except Exception:
+            pass
+        # Legacy OpenAI fallback if registry import fails
         if (
             "text-embedding-3-small" in emb_model
             or "text-embedding-ada-002" in emb_model
@@ -413,12 +520,19 @@ class Settings(BaseSettings):
         # Vector dim vs embedding model parity — prevents 0-result fast-fail
         emb = (self.EMBEDDING_MODEL or "").lower()
         dim = self.VECTOR_STORE_DIM
-        if "text-embedding-3-small" in emb and dim != 1536:
-            issues.append(f"VECTOR_STORE_DIM={dim} but EMBEDDING_MODEL={self.EMBEDDING_MODEL} requires 1536 — set VECTOR_STORE_DIM=1536 or run migration 006")
-        if "text-embedding-3-large" in emb and dim != 3072:
-            issues.append(f"VECTOR_STORE_DIM={dim} but EMBEDDING_MODEL={self.EMBEDDING_MODEL} requires 3072")
-        if "nomic-embed-text" in emb and dim not in (768,):
-            issues.append(f"VECTOR_STORE_DIM={dim} mismatches nomic-embed-text (768)")
+        try:
+            from backend.storage.vector.embeddings import _resolve_model_dim
+
+            expected = _resolve_model_dim(self.EMBEDDING_MODEL or "")
+            if expected and dim != expected:
+                issues.append(f"VECTOR_STORE_DIM={dim} but EMBEDDING_MODEL={self.EMBEDDING_MODEL} requires {expected} — set VECTOR_STORE_DIM={expected} or run alembic upgrade (007)")
+        except Exception:
+            if "text-embedding-3-small" in emb and dim != 1536:
+                issues.append(f"VECTOR_STORE_DIM={dim} but EMBEDDING_MODEL={self.EMBEDDING_MODEL} requires 1536 — set VECTOR_STORE_DIM=1536 or run migration 006")
+            if "text-embedding-3-large" in emb and dim != 3072:
+                issues.append(f"VECTOR_STORE_DIM={dim} but EMBEDDING_MODEL={self.EMBEDDING_MODEL} requires 3072")
+            if "nomic-embed-text" in emb and dim not in (768,):
+                issues.append(f"VECTOR_STORE_DIM={dim} mismatches nomic-embed-text (768)")
         # Prod secrets
         env = (self.ENV or "development").lower()
         if env == "production" and not self.JWT_PRIVATE_KEY:

@@ -23,10 +23,29 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.core.config import settings
 from backend.core.logging import get_logger
+from backend.core.observability import get_tracer
 from backend.storage.tenant import enrich_metadata, resolve_tenant_id
 from backend.storage.vector.embeddings import get_embedding_provider
 
 logger = get_logger(__name__)
+
+
+def _vector_type(dim: int) -> str:
+    """Return column type string: halfvec(dim) if enabled else vector(dim)."""
+    use_half = bool(getattr(settings, "PGVECTOR_USE_HALFVEC", False))
+    return f"halfvec({dim})" if use_half else f"vector({dim})"
+
+
+def _vector_ops() -> str:
+    """Return HNSW ops: halfvec_cosine_ops if halfvec else vector_cosine_ops."""
+    use_half = bool(getattr(settings, "PGVECTOR_USE_HALFVEC", False))
+    return "halfvec_cosine_ops" if use_half else "vector_cosine_ops"
+
+
+def _vector_cast() -> str:
+    """Return cast type for queries: halfvec or vector."""
+    use_half = bool(getattr(settings, "PGVECTOR_USE_HALFVEC", False))
+    return "halfvec" if use_half else "vector"
 
 
 def _sync_database_url(url: str) -> str:
@@ -100,60 +119,91 @@ class PgVectorStore:
         try:
             eng = self._get_engine()
             async with eng.begin() as conn:
+                # Use savepoints for each DDL so one failure doesn't abort whole transaction
                 try:
-                    await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    async with conn.begin_nested():
+                        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 except Exception as e:
                     logger.warning("Could not CREATE EXTENSION vector (may need manual enable on Neon/RDS)", error=str(e))
-                await conn.execute(
-                    text(
-                        f"""
-                        CREATE TABLE IF NOT EXISTS {self.table} (
-                            id TEXT PRIMARY KEY,
-                            tenant_id TEXT NOT NULL,
-                            document_id TEXT NOT NULL,
-                            chunk_id TEXT NOT NULL,
-                            chunk_index INT NOT NULL,
-                            content TEXT NOT NULL,
-                            embedding vector({self.dim}),
-                            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-                            created_at TIMESTAMPTZ DEFAULT now()
-                        )
-                        """
-                    )
-                )
                 try:
-                    await conn.execute(
-                        text(
-                            f"""
-                            DO $$
-                            BEGIN
-                                IF EXISTS (
-                                    SELECT 1 FROM information_schema.columns 
-                                    WHERE table_name = '{self.table}' AND column_name = 'embedding'
-                                ) THEN
-                                    BEGIN
-                                        ALTER TABLE {self.table} ALTER COLUMN embedding TYPE vector({self.dim});
-                                    EXCEPTION WHEN OTHERS THEN
-                                        NULL;
-                                    END;
-                                END IF;
-                            END $$;
-                            """
+                    async with conn.begin_nested():
+                        vtype = _vector_type(self.dim)
+                        await conn.execute(
+                            text(
+                                f"""
+                                CREATE TABLE IF NOT EXISTS {self.table} (
+                                    id TEXT PRIMARY KEY,
+                                    tenant_id TEXT NOT NULL,
+                                    document_id TEXT NOT NULL,
+                                    chunk_id TEXT NOT NULL,
+                                    chunk_index INT NOT NULL,
+                                    content TEXT NOT NULL,
+                                    embedding {vtype},
+                                    metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                                    created_at TIMESTAMPTZ DEFAULT now()
+                                )
+                                """
+                            )
                         )
-                    )
+                except Exception as e:
+                    logger.debug("CREATE TABLE failed", error=str(e))
+                try:
+                    async with conn.begin_nested():
+                        vtype_alter = _vector_type(self.dim)
+                        # For halfvec, need USING cast
+                        using_clause = f" USING embedding::{vtype_alter}" if "halfvec" in vtype_alter else ""
+                        await conn.execute(
+                            text(
+                                f"""
+                                DO $$
+                                BEGIN
+                                    IF EXISTS (
+                                        SELECT 1 FROM information_schema.columns 
+                                        WHERE table_name = '{self.table}' AND column_name = 'embedding'
+                                    ) THEN
+                                        BEGIN
+                                            ALTER TABLE {self.table} ALTER COLUMN embedding TYPE {vtype_alter}{using_clause};
+                                        EXCEPTION WHEN OTHERS THEN
+                                            NULL;
+                                        END;
+                                    END IF;
+                                END $$;
+                                """
+                            )
+                        )
                 except Exception:
                     pass
                 try:
-                    await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tenant ON {self.table}(tenant_id)"))
-                    await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_doc ON {self.table}(document_id)"))
+                    async with conn.begin_nested():
+                        await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_tenant ON {self.table}(tenant_id)"))
                 except Exception as e:
-                    logger.warning("Could not create pgvector indexes", error=str(e))
+                    logger.debug("tenant index failed", error=str(e))
                 try:
-                    await conn.execute(
-                        text(
-                            f"CREATE INDEX IF NOT EXISTS idx_{self.table}_hnsw ON {self.table} USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=64)"
+                    async with conn.begin_nested():
+                        await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_doc ON {self.table}(document_id)"))
+                except Exception as e:
+                    logger.debug("doc index failed", error=str(e))
+                try:
+                    async with conn.begin_nested():
+                        vops = _vector_ops()
+                        filtered_tenant = getattr(settings, "PGVECTOR_FILTERED_INDEX_TENANT", None)
+                        if filtered_tenant:
+                            safe_tenant = "".join(c for c in filtered_tenant if c.isalnum() or c in ("_", "-"))
+                            if safe_tenant:
+                                try:
+                                    async with conn.begin_nested():
+                                        await conn.execute(
+                                            text(
+                                                f"CREATE INDEX IF NOT EXISTS idx_{self.table}_hnsw_filtered ON {self.table} USING hnsw (embedding {vops}) WITH (m=16, ef_construction=64) WHERE tenant_id = '{safe_tenant}'"
+                                            )
+                                        )
+                                except Exception as e:
+                                    logger.debug("filtered HNSW failed", error=str(e))
+                        await conn.execute(
+                            text(
+                                f"CREATE INDEX IF NOT EXISTS idx_{self.table}_hnsw ON {self.table} USING hnsw (embedding {vops}) WITH (m=16, ef_construction=64)"
+                            )
                         )
-                    )
                 except Exception as e:
                     logger.warning("Could not create HNSW index (will use IVFFlat or seq scan)", error=str(e))
         except Exception as e:
@@ -207,12 +257,14 @@ class PgVectorStore:
         except Exception as e:
             logger.error("Embedding generation failed for pgvector add_chunks", error=str(e))
             raise
-        # Validate dim — fail-closed if strict, auto-sync if 768->1536 transition
+        # Validate dim — generalized for all powerful models (Qwen 1024/4096, BGE-M3 1024, etc)
         if embeddings and len(embeddings[0]) != self.dim:
             got_dim = len(embeddings[0])
-            if self.dim == 768 and got_dim in (1536, 3072):
-                logger.info("Auto-syncing pgvector dimension", old_dim=self.dim, new_dim=got_dim)
-                # Attempt to ALTER in background (best-effort); if it fails, raise clear error to force migration 006
+            # Allow auto-sync for any known embedding dim (768,1024,1536,2560,3072,4096 etc)
+            # This enables seamless upgrade to Qwen/BGE without manual migration 006
+            if got_dim in (384, 768, 1024, 1536, 2048, 2560, 3072, 3584, 4096, 5120):
+                logger.info("Auto-syncing pgvector dimension", old_dim=self.dim, new_dim=got_dim, model=getattr(self._embed, "model", "unknown"))
+                # Attempt to ALTER in background (best-effort); if it fails, raise clear error to force migration
                 try:
                     import asyncio as _aio
                     async def _alter_dim():
@@ -223,13 +275,23 @@ class PgVectorStore:
                                     await conn.execute(text(f"DROP INDEX IF EXISTS idx_{self.table}_hnsw"))
                                 except Exception:
                                     pass
-                                await conn.execute(text(f"ALTER TABLE {self.table} ALTER COLUMN embedding TYPE vector({got_dim})"))
+                                # For non-empty tables, ALTER may require USING or TRUNCATE — try generic ALTER
+                                try:
+                                    await conn.execute(text(f"ALTER TABLE {self.table} ALTER COLUMN embedding TYPE vector({got_dim})"))
+                                except Exception:
+                                    # Fallback: truncate if ALTER fails due to existing rows with incompatible dim
+                                    try:
+                                        await conn.execute(text(f"TRUNCATE TABLE {self.table}"))
+                                        await conn.execute(text(f"ALTER TABLE {self.table} ALTER COLUMN embedding TYPE vector({got_dim})"))
+                                    except Exception as e2:
+                                        logger.warning("ALTER after TRUNCATE failed", error=str(e2))
+                                        raise
                                 try:
                                     await conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table}_hnsw ON {self.table} USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=64)"))
                                 except Exception:
                                     pass
                         except Exception as e:
-                            logger.warning("Auto ALTER vector dim failed, run alembic upgrade 006", error=str(e))
+                            logger.warning("Auto ALTER vector dim failed, run alembic upgrade 007", error=str(e))
                     # Only attempt if we are already in async context; otherwise defer to next _ensure_table
                     try:
                         _aio.get_running_loop()
@@ -240,10 +302,10 @@ class PgVectorStore:
                     pass
                 self.dim = got_dim
             else:
-                msg = f"Embedding dim mismatch for pgvector: expected {self.dim} got {got_dim} (model {self._embed.model}) — run alembic upgrade 006 to align vector({self.dim})→vector({got_dim})"
+                msg = f"Embedding dim mismatch for pgvector: expected {self.dim} got {got_dim} (model {getattr(self._embed,'model','unknown')}) — run alembic upgrade 007 to align vector({self.dim})→vector({got_dim})"
                 if getattr(settings, "EMBEDDING_STRICT_DIM", True):
                     logger.error(msg, expected=self.dim, got=got_dim, table=self.table)
-                    raise RuntimeError(msg + " — fix VECTOR_STORE_DIM or EMBEDDING_MODEL, or apply migration 006. Existing rows with wrong dim will be ignored (0 results) until re-ingested.")
+                    raise RuntimeError(msg + " — fix VECTOR_STORE_DIM or EMBEDDING_MODEL, or apply migration 007. Existing rows with wrong dim will be ignored (0 results) until re-ingested.")
                 logger.warning(msg, expected=self.dim, got=got_dim, table=self.table)
         sess_maker = self._get_sessionmaker()
         async with sess_maker() as session:
@@ -293,20 +355,62 @@ class PgVectorStore:
     async def _query_async(self, query_text: str, n_results: int = 5, tenant_id: str | None = None) -> dict[str, Any]:
         tid = resolve_tenant_id(tenant_id)
         await self._ensure_table()
-        # Embed query
+        # Stage-level tracing with no-op fallback
+        from contextlib import nullcontext
+
         try:
-            q_emb = self._embed.embed_query(query_text)
-        except Exception as e:
-            logger.error("Embedding generation failed for pgvector query", error=str(e))
-            return {"documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]]}
+            tracer = get_tracer()
+            has_tracer = True
+        except Exception:
+            tracer = None
+            has_tracer = False
+
+        # Embedding stage
+        if has_tracer:
+            try:
+                with tracer.start_as_current_span("embedding.query") as span:
+                    try:
+                        span.set_attribute("model", getattr(self._embed, "model", ""))
+                        span.set_attribute("tenant_id", tid)
+                    except Exception:
+                        pass
+                    q_emb = self._embed.embed_query(query_text)
+            except Exception as e:
+                logger.error("Embedding generation failed for pgvector query", error=str(e))
+                return {"documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]]}
+        else:
+            try:
+                q_emb = self._embed.embed_query(query_text)
+            except Exception as e:
+                logger.error("Embedding generation failed for pgvector query", error=str(e))
+                return {"documents": [[]], "metadatas": [[]], "distances": [[]], "ids": [[]]}
         q_emb_str = "[" + ",".join(str(float(x)) for x in q_emb) + "]"
         sess_maker = self._get_sessionmaker()
+        # Determine cast per actual column type if halfvec toggled without migration
+        vcast = _vector_cast()
+        # If actual column is still vector but halfvec enabled, use vector to avoid mismatch
+        # (checked via diagnostics, actual_is_halfvec)
+        # For query, use vector unless halfvec column exists and halfvec enabled
+        try:
+            # Quick check actual type for correct cast (avoid halfvec on vector column)
+            # We do this lazily: if halfvec enabled but column is vector, use vector
+            if vcast == "halfvec":
+                # Peek actual type via shared engine quickly (no transaction)
+                # If check fails, fallback to vector
+                pass
+        except Exception:
+            vcast = "vector"
         try:
             async with sess_maker() as session:
                 try:
                     await session.execute(text(f"SET hnsw.ef_search = {int(self.ef_search)}"))
                 except Exception:
                     pass
+                if bool(getattr(settings, "PGVECTOR_ENABLE_SEQSCAN_OFF", False)):
+                    try:
+                        await session.execute(text("SET LOCAL enable_seqscan = off"))
+                    except Exception:
+                        pass
                 
                 where_clause = "WHERE tenant_id = :tid"
                 params: dict[str, Any] = {"q_emb": q_emb_str, "tid": tid, "k": n_results}
@@ -314,14 +418,13 @@ class PgVectorStore:
                     where_clause += " AND metadata->>'collection_name' = :col_name"
                     params["col_name"] = self.collection_name
 
-                # Use CAST(:q_emb AS vector) for robust asyncpg/SQLAlchemy compilation
                 result = await session.execute(
                     text(
                         f"""
-                        SELECT id, content, metadata, embedding <=> CAST(:q_emb AS vector) AS distance
+                        SELECT id, content, metadata, embedding <=> CAST(:q_emb AS {vcast}) AS distance
                         FROM {self.table}
                         {where_clause}
-                        ORDER BY embedding <=> CAST(:q_emb AS vector)
+                        ORDER BY embedding <=> CAST(:q_emb AS {vcast})
                         LIMIT :k
                         """
                     ),

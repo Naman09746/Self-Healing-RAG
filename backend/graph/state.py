@@ -177,6 +177,7 @@ class RAGState(BaseModel):
 
     # Processing
     rewritten_query: Optional[str] = None
+    expanded_queries: List[str] = Field(default_factory=list)
     retrieved_chunks: Annotated[BoundedList[RetrievedChunk], operator.add] = Field(
         default_factory=lambda: BoundedList[RetrievedChunk](maxlen=RETRIEVED_CHUNKS_MAXLEN)
     )

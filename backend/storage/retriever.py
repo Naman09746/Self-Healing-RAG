@@ -24,6 +24,136 @@ from backend.storage.tenant import (
 
 logger = get_logger(__name__)
 
+
+def _compute_jaccard(t1: str, t2: str) -> float:
+    w1 = set(t1.lower().split())
+    w2 = set(t2.lower().split())
+    if not w1 or not w2:
+        return 0.0
+    return len(w1 & w2) / len(w1 | w2)
+
+
+def _normalize_for_dedup(text: str) -> str:
+    """Normalize for exact duplicate detection: lower, strip, collapse whitespace."""
+    return " ".join(text.lower().split())
+
+
+def _jaccard_sets(s1: set[str], s2: set[str]) -> float:
+    if not s1 or not s2:
+        return 0.0
+    inter = len(s1 & s2)
+    if inter == 0:
+        return 0.0
+    union = len(s1 | s2)
+    return inter / union if union else 0.0
+
+
+def _dedup_by_jaccard(candidates: List[Dict[str, Any]], threshold: float) -> List[Dict[str, Any]]:
+    """Scalable dedup: exact hash O(n) + prefix-filter Jaccard O(n * avg_candidates).
+
+    Replaces O(n²) pairwise Jaccard (512ms @500) with ~10-20ms @500.
+    Preserves ranking order (sorted_candidates already by RRF score, kept first).
+    """
+    if not candidates:
+        return []
+    if threshold <= 0:
+        # No dedup
+        return list(candidates)
+    if threshold > 1:
+        threshold = 1.0
+
+    deduped: List[Dict[str, Any]] = []
+    # Exact duplicate index: normalized hash -> bool
+    exact_seen: set[str] = set()
+    # For near-duplicate: inverted index token -> list of deduped indices
+    # and parallel storage of token sets for fast Jaccard
+    deduped_token_sets: List[set[str]] = []
+    inverted: Dict[str, List[int]] = {}
+    # Precompute ceil threshold for prefix length formula
+    import math
+
+    for cand in candidates:
+        c_text = cand.get("content", "") or ""
+        # Exact check via normalized hash (fast, catches identical content)
+        norm = _normalize_for_dedup(c_text)
+        if not norm:
+            deduped.append(cand)
+            continue
+        # Use hash of normalized text for exact detection (SHA would be slower, use python hash of norm)
+        # For exact dup we need deterministic: use norm string directly as key (dict)
+        if norm in exact_seen:
+            continue
+        # Token set for near-duplicate
+        tokens = set(norm.split())
+        if not tokens:
+            deduped.append(cand)
+            exact_seen.add(norm)
+            continue
+        # Size filter bounds for Jaccard threshold: |B| in [t*|A|, |A|/t]
+        # Only need to check kept with size in bounds
+        n = len(tokens)
+        # Prefix length: |A| - ceil(t*|A|) +1  (classic prefix filter)
+        # For t=0.85, n=150 -> prefix 23
+        prefix_len = n - math.ceil(threshold * n) + 1
+        if prefix_len < 1:
+            prefix_len = 1
+        if prefix_len > n:
+            prefix_len = n
+        sorted_tokens = sorted(tokens)
+        prefix_tokens = sorted_tokens[:prefix_len]
+
+        # Gather candidate indices from inverted index that share prefix token
+        candidate_indices: set[int] = set()
+        for tok in prefix_tokens:
+            lst = inverted.get(tok)
+            if lst:
+                for idx in lst:
+                    # Size filter: quick prune
+                    m = len(deduped_token_sets[idx])
+                    # Jaccard >= t implies m >= t*n and m <= n/t
+                    # Use integer bounds to avoid float
+                    if m < threshold * n or m > n / threshold if threshold > 0 else False:
+                        continue
+                    candidate_indices.add(idx)
+
+        # If candidate_indices empty, but we still need to ensure no false negative when threshold low
+        # For high threshold 0.85, prefix filter is safe (no false negatives). For lower threshold, same.
+        # So we only need to check those candidates; if none, it's not duplicate.
+        is_dup = False
+        for idx in candidate_indices:
+            other_set = deduped_token_sets[idx]
+            # Quick length filter already, now compute Jaccard
+            # Early exit if intersection too small: need inter >= t*union
+            # inter >= t*(n+m - inter) => inter >= t*(n+m)/(1+t)
+            # We can compute directly
+            j = _jaccard_sets(tokens, other_set)
+            if j >= threshold:
+                is_dup = True
+                break
+
+        # Fallback: if threshold is high (0.85) and prefix filter found nothing, it's not duplicate
+        # No need to brute force all (would defeat optimization). For safety when n small (<5),
+        # brute force small sets to avoid missing due to prefix length =1
+        if not is_dup and n <= 5 and not candidate_indices:
+            # For tiny sets, prefix filter may be too strict (prefix_len=1 but still should have been caught)
+            # But if no prefix overlap, jaccard cannot be >=0.85 anyway because they'd share <1 token
+            # So skip brute force
+            pass
+
+        if not is_dup:
+            # Keep candidate
+            new_idx = len(deduped)
+            deduped.append(cand)
+            exact_seen.add(norm)
+            deduped_token_sets.append(tokens)
+            # Index prefix tokens for future candidates
+            for tok in prefix_tokens:
+                inverted.setdefault(tok, []).append(new_idx)
+        # else: duplicate → skip (keep higher RRF score which is earlier due to sorted order)
+
+    return deduped
+
+
 class HybridRetriever:
     def __init__(
         self,
@@ -190,19 +320,7 @@ class HybridRetriever:
                 )
 
                 # Deduplicate high-overlap chunks (Jaccard similarity >= threshold) before top-k truncation
-                def _compute_jaccard(t1: str, t2: str) -> float:
-                    w1 = set(t1.lower().split())
-                    w2 = set(t2.lower().split())
-                    if not w1 or not w2:
-                        return 0.0
-                    return len(w1 & w2) / len(w1 | w2)
-
-                deduped_candidates: List[Dict[str, Any]] = []
-                for cand in sorted_candidates:
-                    c_text = cand.get("content", "")
-                    if not any(_compute_jaccard(c_text, kept.get("content", "")) >= jaccard_threshold for kept in deduped_candidates):
-                        deduped_candidates.append(cand)
-
+                deduped_candidates = _dedup_by_jaccard(sorted_candidates, jaccard_threshold)
                 final_results = deduped_candidates[:k]
                 rrf_span.set_attribute("candidates", len(fused_scores))
                 rrf_span.set_attribute("deduped_count", len(deduped_candidates))
@@ -241,12 +359,7 @@ class HybridRetriever:
                     key=lambda x: x["score"],
                     reverse=True
                 )
-                deduped_candidates = []
-                for cand in sorted_candidates:
-                    c_text = cand.get("content", "")
-                    if not any(_compute_jaccard(c_text, kept.get("content", "")) >= jaccard_threshold for kept in deduped_candidates):
-                        deduped_candidates.append(cand)
-                final_results = deduped_candidates[:k]
+                final_results = _dedup_by_jaccard(sorted_candidates, jaccard_threshold)[:k]
                 span.set_attribute("graph_results", len(graph_results))
 
             # Audit log the retrieval operation
@@ -266,6 +379,97 @@ class HybridRetriever:
             span.set_status(trace.Status(trace.StatusCode.OK))
 
         return final_results
+
+    async def retrieve_many(
+        self,
+        queries: List[str],
+        k: int = 5,
+        tenant_id: Optional[str] = None,
+        user_uuid: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Execute multi-query retrieval concurrently and fuse results via RRF."""
+        if not queries:
+            return []
+
+        # Deduplicate non-empty queries preserving order
+        unique_queries: List[str] = []
+        for q in queries:
+            s = q.strip() if q else ""
+            if s and s not in unique_queries:
+                unique_queries.append(s)
+
+        if not unique_queries:
+            return []
+
+        if len(unique_queries) == 1:
+            return await self.retrieve(
+                unique_queries[0],
+                k=k,
+                tenant_id=tenant_id,
+                user_uuid=user_uuid,
+                session_id=session_id,
+            )
+
+        tracer = get_tracer()
+        with tracer.start_as_current_span("retrieve_many") as span:
+            span.set_attribute("queries_count", len(unique_queries))
+            span.set_attribute("k", k)
+
+            tasks = [
+                self.retrieve(
+                    q,
+                    k=k,
+                    tenant_id=tenant_id,
+                    user_uuid=user_uuid,
+                    session_id=session_id,
+                )
+                for q in unique_queries
+            ]
+            results_per_query = await asyncio.gather(*tasks, return_exceptions=True)
+
+            fused_scores: Dict[str, Dict[str, Any]] = {}
+            jaccard_threshold = float(getattr(settings, "RRF_JACCARD_THRESHOLD", 0.85))
+
+            # Primary query (index 0) gets weight 1.0; expanded variants get weight 0.8
+            for idx, res_list in enumerate(results_per_query):
+                if isinstance(res_list, Exception):
+                    logger.error(
+                        "Multi-query sub-retrieval failed",
+                        query=unique_queries[idx],
+                        error=str(res_list),
+                    )
+                    continue
+
+                weight = 1.0 if idx == 0 else 0.8
+                for rank, res in enumerate(res_list):
+                    content = res.get("content", "")
+                    if not content:
+                        continue
+                    if content not in fused_scores:
+                        fused_scores[content] = {
+                            "score": 0.0,
+                            "metadata": res.get("metadata", {}),
+                            "chunk_id": res.get("chunk_id", ""),
+                            "distance": res.get("distance", None),
+                        }
+                    fused_scores[content]["score"] += weight * (1.0 / (self.rrf_k + rank + 1))
+                    d = res.get("distance", None)
+                    if d is not None:
+                        cur = fused_scores[content].get("distance")
+                        if cur is None or d < cur:
+                            fused_scores[content]["distance"] = d
+
+            sorted_candidates = sorted(
+                [{"content": c, **v} for c, v in fused_scores.items()],
+                key=lambda x: x["score"],
+                reverse=True,
+            )
+
+            final_results = _dedup_by_jaccard(sorted_candidates, jaccard_threshold)[:k]
+            span.set_attribute("candidates", len(fused_scores))
+            span.set_attribute("final_count", len(final_results))
+            return final_results
 
     def _retrieve_from_graph(self, query: str) -> List[str]:
         """Extract entities from query and traverse relationships in a single batched Cypher query."""

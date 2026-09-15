@@ -29,16 +29,24 @@
 ## ⚡ Pipeline Flow & Fast-Path Architecture
 
 ```
-User Query ──▶ Intake (Parallel Memory) ──▶ Planner (Complexity Score) ──▶ Hybrid Retriever ────┐
-                                                                                  │              │ (0 relevant chunks)
-                                                                       (has data) ▼              ▼ [Fast-Fail ~200ms]
-                                                                              Generator ──▶ Output ◀──┘
-                                                                                  │            ▲
-                                                                                  ▼            │
-                                                                         Critic (Adaptive) ────┤ (grounded)
-                                                                                  │ (unverified)
-                                                                                  ▼
-                                                                               Healer (Max 1 Loop)
+User Query ──▶ Intake (Parallel Memory) ──▶ Planner (Complexity + Multi-Query)
+                                                        │
+                                                        ▼
+                                           Hybrid Retriever (pgvector + tsvector)
+                                                        │
+                                                        ▼
+                                           Two-Stage Fusion & Reranking
+                                           (RRF k=60 ──▶ Cross-Encoder MiniLM)
+                                                        │
+                                                        ├─────────────────────────────┐ (0 relevant chunks)
+                                             (has data) ▼                             ▼ [Fast-Fail ~200ms]
+                                                    Generator ────────────────────▶ Output ◀──┘
+                                                        │                              ▲
+                                                        ▼                              │
+                                               Critic (Adaptive NLI) ──────────────────┤ (grounded)
+                                                        │ (unverified / partial)
+                                                        ▼
+                                                    Healer (Targeted Rewrite, Max 1 Loop)
 ```
 
 ### Key Latency Optimizations:
@@ -292,6 +300,29 @@ uv run ruff check backend/
 ```
 
 **Test Coverage:** 280+ tests verifying LangGraph state transitions, vector store parity, hybrid fusion, grounding verification, and fast-fail pathways.
+
+---
+
+## 📊 Offline Evaluation & Benchmarking
+
+The pipeline includes a built-in evaluation runner with automated tracking into `eval_results/`:
+
+```bash
+# Run evaluation benchmark across the enterprise test suite (heuristic / offline mode)
+uv run python -m backend.evaluation.runner --dataset backend/evaluation/eval_dataset.jsonl --heuristic
+
+# Run evaluation on specific dataset with custom sample limit
+uv run python -m backend.evaluation.runner --dataset backend/evaluation/eval_dataset_v2.jsonl --limit 10 --heuristic
+
+# Run full RAGAS LLM-assisted evaluation
+uv run python -m backend.evaluation.runner --dataset backend/evaluation/eval_dataset.jsonl
+```
+
+### Evaluation Output & Metrics
+- **Faithfulness:** Quantifies factual grounding of generated answers against retrieved contexts.
+- **Answer Relevancy:** Measures completeness and directness in answering the user prompt.
+- **Context Precision:** Measures signal-to-noise ratio of retrieved chunks against ground-truth context.
+- **Persistence:** All benchmark runs output structured JSON reports and append to `eval_results/eval_history.csv` for historical tracking.
 
 ---
 
